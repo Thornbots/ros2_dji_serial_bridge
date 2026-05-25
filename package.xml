@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
+            schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>ros2_dji_serial_bridge</name>
+  <version>0.1.0</version>
+  <description>
+    ROS 2 serial bridge for communication between Jetson and DJI Type C.
+    Implements the DJI-framed UART protocol (CRC8 header / CRC16 frame) and
+    maps all Thornbots message types to ROS topics.
+  </description>
+  <maintainer email="jenninbl@RHIT.edu">Your Name</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>rosidl_default_runtime</depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

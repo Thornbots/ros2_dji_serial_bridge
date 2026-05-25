@@ -1,0 +1,19 @@
+mcb_serial_bridge:
+  ros__parameters:
+    # Serial device.  On Jetson: /dev/ttyTHS1 (onboard UART)
+    # or /dev/ttyUSB0 / /dev/sllidar for CP210x USB adapters.
+    device: /dev/ttyTHS1
+
+    # Baud rate in bits-per-second.
+    # Must match the MCB firmware (UARTCommunication driver).
+    # Supported values: 115200, 230400, 460800, 921600, 2000000, 4000000
+    # Default 115200 is safe for all adapters (CP210x, Type-C, onboard).
+    baudrate: 115200
+
+    # Milliseconds to block inside poll() waiting for incoming serial bytes.
+    # Lower → lower latency from MCB to ROS; 10 ms is a good default.
+    read_poll_ms: 10
+
+    # Drop frames whose CRC-8 (header) or CRC-16 (full frame) does not match.
+    # Set to false only for debugging raw byte traffic.
+    enforce_crc: true
