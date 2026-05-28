@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd"
             schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>ros2_dji_serial_bridge</name>
+  <name>dji_serial_bridge</name>
   <version>0.1.0</version>
   <description>
     ROS 2 serial bridge for communication between Jetson and DJI Type C.
