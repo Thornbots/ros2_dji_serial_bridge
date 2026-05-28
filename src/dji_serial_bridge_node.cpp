@@ -18,7 +18,7 @@
 // file.  For example, ~/nav_goal resolves to /dji_serial_bridge/nav_goal by
 // default but can be remapped to /nav_goal.
 //
-// Parameters (see config/mcb_bridge_params.yaml for defaults):
+// Parameters (see config/dji_bridge_params.yaml for defaults):
 //   device        (string)  : serial device path, e.g. /dev/ttyTHS1
 //   baudrate      (int)     : baud rate in bits-per-second, e.g. 115200
 //   read_poll_ms  (int)     : poll() timeout in milliseconds (10 is fine)
@@ -45,7 +45,7 @@
 #include "dji_serial_bridge/msg/robot_pose.hpp"
 #include "dji_serial_bridge/msg/ref_sys_status.hpp"
 
-#include "dji_serial_bridge/mcb_protocol.hpp"
+#include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
 
 // ─────────────────────────────────────────────────────────────────────────────
