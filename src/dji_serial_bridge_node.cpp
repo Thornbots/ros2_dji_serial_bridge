@@ -23,6 +23,7 @@
 //   baudrate      (int)     : baud rate in bits-per-second, e.g. 115200
 //   read_poll_ms  (int)     : poll() timeout in milliseconds (10 is fine)
 //   enforce_crc   (bool)    : drop frames whose CRC does not match (default true)
+//   diag_interval_s (int)   : how often to print diagnostic stats (default 5)
 
 #include <cerrno>
 #include <cstring>
@@ -37,6 +38,7 @@
 #include <poll.h>
 #include <termios.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/point.hpp>
@@ -77,15 +79,43 @@ public:
     : rclcpp::Node("dji_serial_bridge", options)
     {
         // ── Parameters ────────────────────────────────────────────────────────
-        declare_parameter<std::string>("device",       "/dev/ttyTHS1");
-        declare_parameter<int>        ("baudrate",     115200);
-        declare_parameter<int>        ("read_poll_ms", 20);
-        declare_parameter<bool>       ("enforce_crc",  true);
+        declare_parameter<std::string>("device",         "/dev/ttyTHS1");
+        declare_parameter<int>        ("baudrate",       115200);
+        declare_parameter<int>        ("read_poll_ms",   20);
+        declare_parameter<bool>       ("enforce_crc",    true);
+        declare_parameter<int>        ("diag_interval_s", 5);
 
         const auto device      = get_parameter("device").as_string();
         const auto baudrate    = get_parameter("baudrate").as_int();
         const auto poll_ms     = static_cast<int>(get_parameter("read_poll_ms").as_int());
         enforce_crc_           = get_parameter("enforce_crc").as_bool();
+        const auto diag_s      = get_parameter("diag_interval_s").as_int();
+
+        // ── Pre-open device diagnostics ───────────────────────────────────────
+        struct stat sb{};
+        if (::stat(device.c_str(), &sb) != 0) {
+            RCLCPP_FATAL(get_logger(),
+                "Device '%s' does not exist or cannot be stat'd: %s",
+                device.c_str(), strerror(errno));
+            throw std::runtime_error("Serial device not found: " + device);
+        }
+        // Check it's a character device
+        if (!S_ISCHR(sb.st_mode)) {
+            RCLCPP_FATAL(get_logger(),
+                "Path '%s' exists but is NOT a character device (mode=0%o)",
+                device.c_str(), sb.st_mode);
+            throw std::runtime_error("Not a character device: " + device);
+        }
+        // Warn if we don't have read+write permission
+        if (::access(device.c_str(), R_OK | W_OK) != 0) {
+            RCLCPP_WARN(get_logger(),
+                "Permission check on '%s' failed: %s  "
+                "(try: sudo chmod a+rw %s  OR  sudo usermod -aG dialout $USER)",
+                device.c_str(), strerror(errno), device.c_str());
+        } else {
+            RCLCPP_INFO(get_logger(),
+                "Device '%s' exists and is readable/writable", device.c_str());
+        }
 
         // ── Serial port ───────────────────────────────────────────────────────
         serial_fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
@@ -93,11 +123,17 @@ public:
             throw std::runtime_error(
                 "DjiSerialBridge: failed to open " + device + ": " + strerror(errno));
         }
+        RCLCPP_INFO(get_logger(),
+            "Serial port '%s' opened (fd=%d)", device.c_str(), serial_fd_);
+
         if (!configure_serial(serial_fd_, static_cast<int>(baudrate))) {
             ::close(serial_fd_);
             throw std::runtime_error(
                 "DjiSerialBridge: failed to configure serial port " + device);
         }
+        RCLCPP_INFO(get_logger(),
+            "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
+            baudrate);
 
         // ── Publishers  (MCB → Jetson) ────────────────────────────────────────
         pose_pub_    = create_publisher<dji_serial_bridge::msg::RobotPose>(
@@ -105,10 +141,12 @@ public:
         ref_sys_pub_ = create_publisher<dji_serial_bridge::msg::RefSysStatus>(
             "~/ref_sys", rclcpp::SensorDataQoS());
 
+        RCLCPP_INFO(get_logger(),
+            "Publishers ready:  ~/pose  ~/ref_sys");
+
         // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
         using std::placeholders::_1;
 
-        // geometry_msgs/Point  x=targetX, y=targetY
         nav_goal_sub_ = create_subscription<geometry_msgs::msg::Point>(
             "~/nav_goal", 10,
             std::bind(&DjiSerialBridge::nav_goal_callback, this, _1));
@@ -117,23 +155,37 @@ public:
             "~/cv_target", rclcpp::SensorDataQoS(),
             std::bind(&DjiSerialBridge::cv_target_callback, this, _1));
 
-        // geometry_msgs/Point  x=expectedX, y=expectedY
         relocalize_sub_ = create_subscription<geometry_msgs::msg::Point>(
             "~/relocalize", 10,
             std::bind(&DjiSerialBridge::relocalize_callback, this, _1));
+
+        RCLCPP_INFO(get_logger(),
+            "Subscribers ready: ~/nav_goal  ~/cv_target  ~/relocalize");
+
+        // ── Diagnostic timer ──────────────────────────────────────────────────
+        // Fires every diag_interval_s seconds and prints a stats summary so you
+        // can see at a glance whether bytes / frames are actually flowing.
+        diag_timer_ = create_wall_timer(
+            std::chrono::seconds(diag_s),
+            std::bind(&DjiSerialBridge::print_diagnostics, this));
 
         // ── Read thread ───────────────────────────────────────────────────────
         running_.store(true);
         read_thread_ = std::thread(&DjiSerialBridge::read_loop, this, poll_ms);
 
         RCLCPP_INFO(get_logger(),
-            "MCB serial bridge started on %s @ %ld baud (enforce_crc=%s)",
-            device.c_str(), baudrate, enforce_crc_ ? "true" : "false");
+            "═══════════════════════════════════════════════════════════\n"
+            "  MCB serial bridge READY\n"
+            "  device=%s  baud=%ld  enforce_crc=%s  poll_ms=%d\n"
+            "  Diagnostic summary every %ld s\n"
+            "═══════════════════════════════════════════════════════════",
+            device.c_str(), baudrate,
+            enforce_crc_ ? "true" : "false",
+            poll_ms, diag_s);
     }
 
     ~DjiSerialBridge() override
     {
-        // Signal the read thread first so it stops calling get_logger().
         running_.store(false);
         if (read_thread_.joinable()) {
             read_thread_.join();
@@ -144,6 +196,72 @@ public:
     }
 
 private:
+    // ═══════════════════════════════════════════════════════════════════════
+    // Diagnostic stats
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // All counters are relaxed-atomic so the read thread can increment them
+    // without acquiring the write mutex, and the timer can read them safely.
+    std::atomic<uint64_t> bytes_rx_{0};
+    std::atomic<uint64_t> frames_rx_{0};
+    std::atomic<uint64_t> crc8_errors_{0};
+    std::atomic<uint64_t> crc16_errors_{0};
+    std::atomic<uint64_t> pose_msgs_pub_{0};
+    std::atomic<uint64_t> ref_sys_msgs_pub_{0};
+    std::atomic<uint64_t> nav_goal_msgs_tx_{0};
+    std::atomic<uint64_t> cv_target_msgs_tx_{0};
+    std::atomic<uint64_t> relocalize_msgs_tx_{0};
+    // Consecutive poll() calls that returned 0 (no data).
+    // Resets to 0 the moment any byte arrives.
+    std::atomic<uint64_t> silent_polls_{0};
+
+    void print_diagnostics()
+    {
+        const uint64_t brx   = bytes_rx_.load(std::memory_order_relaxed);
+        const uint64_t frx   = frames_rx_.load(std::memory_order_relaxed);
+        const uint64_t c8    = crc8_errors_.load(std::memory_order_relaxed);
+        const uint64_t c16   = crc16_errors_.load(std::memory_order_relaxed);
+        const uint64_t pose  = pose_msgs_pub_.load(std::memory_order_relaxed);
+        const uint64_t ref   = ref_sys_msgs_pub_.load(std::memory_order_relaxed);
+        const uint64_t ng    = nav_goal_msgs_tx_.load(std::memory_order_relaxed);
+        const uint64_t cv    = cv_target_msgs_tx_.load(std::memory_order_relaxed);
+        const uint64_t rl    = relocalize_msgs_tx_.load(std::memory_order_relaxed);
+        const uint64_t sil   = silent_polls_.load(std::memory_order_relaxed);
+
+        // Pick a severity level depending on whether anything is flowing
+        if (brx == 0 && frames_rx_.load() == 0) {
+            RCLCPP_WARN(get_logger(),
+                "── DIAG ─────────────────────────────────────────────────\n"
+                "  ⚠  NO BYTES RECEIVED YET from MCB!\n"
+                "     Check: cable connected? MCB powered? baud rate matches?\n"
+                "     silent_polls=%lu  (each poll_ms timeout = no data arriving)\n"
+                "  RX  bytes=0  frames=0  crc8_err=0  crc16_err=0\n"
+                "  PUB pose=0  ref_sys=0\n"
+                "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu\n"
+                "─────────────────────────────────────────────────────────",
+                sil, ng, cv, rl);
+        } else if (frx == 0 && brx > 0) {
+            RCLCPP_WARN(get_logger(),
+                "── DIAG ─────────────────────────────────────────────────\n"
+                "  ⚠  BYTES arriving (%lu) but ZERO valid frames decoded!\n"
+                "     Check: baud rate, frame head (0xA5), CRC settings\n"
+                "     crc8_err=%lu  crc16_err=%lu\n"
+                "  RX  bytes=%lu  frames=0\n"
+                "  PUB pose=0  ref_sys=0\n"
+                "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu\n"
+                "─────────────────────────────────────────────────────────",
+                brx, c8, c16, brx, ng, cv, rl);
+        } else {
+            RCLCPP_INFO(get_logger(),
+                "── DIAG ─────────────────────────────────────────────────\n"
+                "  ✓ RX  bytes=%lu  frames=%lu  crc8_err=%lu  crc16_err=%lu\n"
+                "  ✓ PUB pose=%lu  ref_sys=%lu\n"
+                "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu\n"
+                "─────────────────────────────────────────────────────────",
+                brx, frx, c8, c16, pose, ref, ng, cv, rl);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════════════════════
     // Serial port helpers
     // ═══════════════════════════════════════════════════════════════════════
@@ -180,13 +298,10 @@ private:
     // Write path — called from subscriber callbacks (executor thread)
     // ═══════════════════════════════════════════════════════════════════════
 
-    // Build a DJI frame around `payload` and write it to the serial port.
-    // Thread-safe: protected by write_mutex_.
     bool send_frame(McbMsgType msg_type,
                     const uint8_t * payload,
                     uint16_t        payload_len)
     {
-        // Assemble header
         FrameHeader hdr{};
         hdr.head       = FRAME_HEAD;
         hdr.dataLength = payload_len;
@@ -196,7 +311,6 @@ private:
             reinterpret_cast<const uint8_t *>(&hdr), CRC8_COVERAGE);
         hdr.msgType    = static_cast<uint16_t>(msg_type);
 
-        // Assemble complete frame: header + payload + CRC16
         std::vector<uint8_t> frame;
         frame.reserve(sizeof(FrameHeader) + payload_len + 2u);
         const uint8_t * hdr_bytes = reinterpret_cast<const uint8_t *>(&hdr);
@@ -215,6 +329,9 @@ private:
                 static_cast<unsigned>(msg_type), written, frame.size(), strerror(errno));
             return false;
         }
+        RCLCPP_DEBUG(get_logger(),
+            "send_frame: msg_type=%u  seq=%u  payload=%u B  frame=%zu B  OK",
+            static_cast<unsigned>(msg_type), hdr.seq, payload_len, frame.size());
         return true;
     }
 
@@ -224,6 +341,8 @@ private:
 
     void read_loop(int poll_ms)
     {
+        RCLCPP_DEBUG(get_logger(), "read_loop: thread started (poll_ms=%d)", poll_ms);
+
         pollfd pfd{};
         pfd.fd     = serial_fd_;
         pfd.events = POLLIN;
@@ -232,6 +351,10 @@ private:
         rx_buf.reserve(512);
         uint8_t chunk[256];
 
+        // We log a "still no data" warning after this many consecutive silent polls.
+        // With poll_ms=10 this fires after ~1 second of silence.
+        static constexpr uint64_t SILENCE_WARN_POLLS = 100;
+
         while (running_.load()) {
             int ret = poll(&pfd, 1, poll_ms);
             if (ret < 0) {
@@ -239,32 +362,73 @@ private:
                 RCLCPP_ERROR(get_logger(), "poll() error: %s", strerror(errno));
                 break;
             }
-            if (ret > 0 && (pfd.revents & POLLIN)) {
+            if (ret == 0) {
+                // poll timed out — no data this interval
+                const uint64_t sil = ++silent_polls_;
+                // Emit a one-time notice on the first prolonged silence so the
+                // user knows bytes are simply not arriving.
+                if (sil == SILENCE_WARN_POLLS) {
+                    RCLCPP_WARN(get_logger(),
+                        "read_loop: NO DATA from MCB for ~%llu ms  "
+                        "(poll_ms=%d × %llu polls).  "
+                        "Is the MCB powered/connected and transmitting?",
+                        static_cast<unsigned long long>(poll_ms) *
+                        static_cast<unsigned long long>(SILENCE_WARN_POLLS),
+                        poll_ms,
+                        static_cast<unsigned long long>(SILENCE_WARN_POLLS));
+                }
+                continue;
+            }
+
+            if (pfd.revents & POLLIN) {
                 ssize_t n = ::read(serial_fd_, chunk, sizeof(chunk));
                 if (n > 0) {
+                    const uint64_t prev = bytes_rx_.fetch_add(
+                        static_cast<uint64_t>(n), std::memory_order_relaxed);
+                    // Log first byte arrival and then periodically every 1 KB
+                    if (prev == 0) {
+                        RCLCPP_INFO(get_logger(),
+                            "read_loop: first bytes received from MCB! (%zd B)", n);
+                    } else if ((prev / 1024) != ((prev + static_cast<uint64_t>(n)) / 1024)) {
+                        RCLCPP_DEBUG(get_logger(),
+                            "read_loop: %lu bytes total rx (latest chunk %zd B)",
+                            prev + static_cast<uint64_t>(n), n);
+                    }
+                    silent_polls_.store(0, std::memory_order_relaxed);
                     rx_buf.insert(rx_buf.end(), chunk, chunk + n);
                 } else if (n < 0 && errno != EAGAIN) {
                     RCLCPP_ERROR(get_logger(), "read() error: %s", strerror(errno));
                     break;
                 }
             }
-            // Process whatever is in the buffer (may span multiple read() calls)
+
+            if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                RCLCPP_ERROR(get_logger(),
+                    "read_loop: poll() returned error event 0x%x on fd — "
+                    "serial device disconnected?", pfd.revents);
+                break;
+            }
+
             process_rx_buffer(rx_buf);
         }
+
+        RCLCPP_INFO(get_logger(),
+            "read_loop: thread exiting  (bytes_rx=%lu  frames_rx=%lu)",
+            bytes_rx_.load(), frames_rx_.load());
     }
 
     // Scan rx_buf for complete, CRC-validated DJI frames and dispatch them.
-    // Consumes bytes as frames are extracted; stops when the buffer is
-    // exhausted or more bytes are needed to complete the next frame.
     void process_rx_buffer(std::vector<uint8_t> & buf)
     {
-        // Minimum viable frame: 7-byte header + 0-byte payload + 2-byte CRC16
         static constexpr size_t MIN_FRAME = sizeof(FrameHeader) + 2u;
 
         while (buf.size() >= MIN_FRAME) {
 
             // ── 1. Hunt for frame head ──────────────────────────────────────
             if (buf[0] != FRAME_HEAD) {
+                RCLCPP_DEBUG(get_logger(),
+                    "process_rx_buffer: skipping byte 0x%02x (not FRAME_HEAD 0xA5)",
+                    buf[0]);
                 buf.erase(buf.begin());
                 continue;
             }
@@ -275,6 +439,7 @@ private:
 
             uint8_t expected_crc8 = calculateCRC8(buf.data(), CRC8_COVERAGE);
             if (expected_crc8 != hdr.crc8 && enforce_crc_) {
+                crc8_errors_.fetch_add(1, std::memory_order_relaxed);
                 RCLCPP_WARN(get_logger(),
                     "CRC8 mismatch (seq=%u, got=0x%02x expected=0x%02x) — dropping byte",
                     hdr.seq, hdr.crc8, expected_crc8);
@@ -285,16 +450,20 @@ private:
             // ── 3. Wait until the full frame has arrived ────────────────────
             size_t total_len = sizeof(FrameHeader) + hdr.dataLength + 2u;
             if (buf.size() < total_len) {
-                break;  // need more bytes
+                RCLCPP_DEBUG(get_logger(),
+                    "process_rx_buffer: partial frame (have %zu B, need %zu B) — waiting",
+                    buf.size(), total_len);
+                break;
             }
 
             // ── 4. Validate CRC16 over header + payload ─────────────────────
-            size_t crc16_idx    = sizeof(FrameHeader) + hdr.dataLength;
+            size_t   crc16_idx  = sizeof(FrameHeader) + hdr.dataLength;
             uint16_t recv_crc16 = static_cast<uint16_t>(buf[crc16_idx]) |
                                    (static_cast<uint16_t>(buf[crc16_idx + 1]) << 8);
             uint16_t calc_crc16 = calculateCRC16(buf.data(), crc16_idx);
 
             if (recv_crc16 != calc_crc16 && enforce_crc_) {
+                crc16_errors_.fetch_add(1, std::memory_order_relaxed);
                 RCLCPP_WARN(get_logger(),
                     "CRC16 mismatch (seq=%u, msgType=%u, dataLen=%u, "
                     "got=0x%04x expected=0x%04x) — dropping byte",
@@ -303,8 +472,12 @@ private:
                 continue;
             }
 
-            // ── 5. Dispatch to the appropriate handler ──────────────────────
+            // ── 5. Dispatch ─────────────────────────────────────────────────
             const uint8_t * payload = buf.data() + sizeof(FrameHeader);
+            RCLCPP_DEBUG(get_logger(),
+                "process_rx_buffer: valid frame  seq=%u  msgType=%u  dataLen=%u",
+                hdr.seq, hdr.msgType, hdr.dataLength);
+            frames_rx_.fetch_add(1, std::memory_order_relaxed);
             dispatch_incoming(hdr.msgType, payload, hdr.dataLength);
 
             // ── 6. Consume the frame ────────────────────────────────────────
@@ -321,7 +494,6 @@ private:
             case McbMsgType::REF_SYS:
                 handle_ref_sys(payload, len);
                 break;
-            // IDs 0, 1, 4 are Jetson→MCB only; the MCB should never send them.
             default:
                 RCLCPP_WARN(get_logger(),
                     "Unexpected inbound msgType=%u (len=%u) — ignoring", msg_type, len);
@@ -345,15 +517,27 @@ private:
         PoseDataPayload raw{};
         std::memcpy(&raw, payload, sizeof(raw));
 
-        auto msg       = dji_serial_bridge::msg::RobotPose{};
+        auto msg         = dji_serial_bridge::msg::RobotPose{};
         msg.header.stamp = now();
-        msg.x          = raw.x;
-        msg.y          = raw.y;
-        msg.vel_x      = raw.vel_x;
-        msg.vel_y      = raw.vel_y;
-        msg.head_pitch = raw.head_pitch;
-        msg.head_yaw   = raw.head_yaw;
+        msg.x            = raw.x;
+        msg.y            = raw.y;
+        msg.vel_x        = raw.vel_x;
+        msg.vel_y        = raw.vel_y;
+        msg.head_pitch   = raw.head_pitch;
+        msg.head_yaw     = raw.head_yaw;
 
+        const uint64_t count =
+            pose_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count == 1) {
+            RCLCPP_INFO(get_logger(),
+                "handle_pose: FIRST pose message published! "
+                "x=%.3f y=%.3f vel_x=%.3f vel_y=%.3f pitch=%.3f yaw=%.3f",
+                raw.x, raw.y, raw.vel_x, raw.vel_y, raw.head_pitch, raw.head_yaw);
+        } else {
+            RCLCPP_DEBUG(get_logger(),
+                "handle_pose #%lu: x=%.3f y=%.3f vel_x=%.3f vel_y=%.3f",
+                count, raw.x, raw.y, raw.vel_x, raw.vel_y);
+        }
         pose_pub_->publish(msg);
     }
 
@@ -369,31 +553,36 @@ private:
         RefSysMsgPayload raw{};
         std::memcpy(&raw, payload, sizeof(raw));
 
-        auto msg                   = dji_serial_bridge::msg::RefSysStatus{};
-        msg.header.stamp           = now();
-        msg.game_stage             = raw.gameStage;
-        msg.stage_time_remaining   = raw.stageTimeRemaining;
-        msg.robot_hp               = raw.robotHp;
-        msg.robot_id               = raw.robotID;
-        msg.delta_angle_got_hit_in = raw.deltaAngleGotHitIn;
+        auto msg                     = dji_serial_bridge::msg::RefSysStatus{};
+        msg.header.stamp             = now();
+        msg.game_stage               = raw.gameStage;
+        msg.stage_time_remaining     = raw.stageTimeRemaining;
+        msg.robot_hp                 = raw.robotHp;
+        msg.robot_id                 = raw.robotID;
+        msg.delta_angle_got_hit_in   = raw.deltaAngleGotHitIn;
 
-        // Unpack booleans byte — bit layout matches JetsonSubsystem.cpp packing:
-        //   bit 7 : isOnBlueTeam           bit 1 : chassisHasPower
-        //   bit 6 : isHealing              bit 0 : gimbalHasPower
-        //   bit 5 : isInReloadZone
-        //   bit 4 : isInCenterZone
-        //   bit 3 : teamOccupiesCenter
-        //   bit 2 : opponentOccupiesCenter
-        const uint8_t b         = raw.booleans;
-        msg.is_on_blue_team         = (b >> 7) & 1u;
-        msg.is_healing              = (b >> 6) & 1u;
-        msg.is_in_reload_zone       = (b >> 5) & 1u;
-        msg.is_in_center_zone       = (b >> 4) & 1u;
-        msg.team_occupies_center    = (b >> 3) & 1u;
+        const uint8_t b              = raw.booleans;
+        msg.is_on_blue_team          = (b >> 7) & 1u;
+        msg.is_healing               = (b >> 6) & 1u;
+        msg.is_in_reload_zone        = (b >> 5) & 1u;
+        msg.is_in_center_zone        = (b >> 4) & 1u;
+        msg.team_occupies_center     = (b >> 3) & 1u;
         msg.opponent_occupies_center = (b >> 2) & 1u;
-        msg.chassis_has_power       = (b >> 1) & 1u;
-        msg.gimbal_has_power        = (b >> 0) & 1u;
+        msg.chassis_has_power        = (b >> 1) & 1u;
+        msg.gimbal_has_power         = (b >> 0) & 1u;
 
+        const uint64_t count =
+            ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (count == 1) {
+            RCLCPP_INFO(get_logger(),
+                "handle_ref_sys: FIRST ref_sys message published! "
+                "stage=%u hp=%u robot_id=%u blue=%u chassis_power=%u gimbal_power=%u",
+                raw.gameStage, raw.robotHp, raw.robotID,
+                (b >> 7) & 1u, (b >> 1) & 1u, b & 1u);
+        } else {
+            RCLCPP_DEBUG(get_logger(),
+                "handle_ref_sys #%lu: stage=%u hp=%u", count, raw.gameStage, raw.robotHp);
+        }
         ref_sys_pub_->publish(msg);
     }
 
@@ -401,54 +590,51 @@ private:
     // Subscriber callbacks  (Jetson → MCB)
     // ═══════════════════════════════════════════════════════════════════════
 
-    // ~/nav_goal  →  ROS_MSG (id=0)
-    // Publish the 2-D navigation goal for the chassis auto-drive controller.
-    // x = targetX, y = targetY  (Point.z is unused)
     void nav_goal_callback(const geometry_msgs::msg::Point::SharedPtr msg)
     {
         ROSDataPayload p{};
         p.targetX = static_cast<float>(msg->x);
         p.targetY = static_cast<float>(msg->y);
 
-        if (!send_frame(McbMsgType::ROS_MSG,
-                        reinterpret_cast<const uint8_t *>(&p), sizeof(p)))
-        {
+        const bool ok = send_frame(McbMsgType::ROS_MSG,
+                        reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+        if (ok) {
+            nav_goal_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+        } else {
             RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
                 "Failed to send ROS_MSG (nav_goal)");
         }
     }
 
-    // ~/cv_target  →  CV_MSG (id=1)
-    // Forward the CV pipeline's target detection to the gimbal ballistics solver.
     void cv_target_callback(const dji_serial_bridge::msg::CVTarget::SharedPtr msg)
     {
         CVDataPayload p{};
-        p.x          = msg->x;   p.y    = msg->y;   p.z    = msg->z;
-        p.v_x        = msg->v_x; p.v_y  = msg->v_y; p.v_z  = msg->v_z;
-        p.a_x        = msg->a_x; p.a_y  = msg->a_y; p.a_z  = msg->a_z;
+        p.x          = msg->x;   p.y   = msg->y;   p.z   = msg->z;
+        p.v_x        = msg->v_x; p.v_y = msg->v_y; p.v_z = msg->v_z;
+        p.a_x        = msg->a_x; p.a_y = msg->a_y; p.a_z = msg->a_z;
         p.confidence = msg->confidence;
 
-        if (!send_frame(McbMsgType::CV_MSG,
-                        reinterpret_cast<const uint8_t *>(&p), sizeof(p)))
-        {
+        const bool ok = send_frame(McbMsgType::CV_MSG,
+                        reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+        if (ok) {
+            cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+        } else {
             RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
                 "Failed to send CV_MSG (cv_target)");
         }
     }
 
-    // ~/relocalize  →  RELOCALIZE (id=4)
-    // Tell the MCB where the lidar thinks the robot currently is so it can
-    // correct odometry drift.
-    // x = expectedX, y = expectedY  (Point.z is unused)
     void relocalize_callback(const geometry_msgs::msg::Point::SharedPtr msg)
     {
         RelocalizePayload p{};
         p.expectedX = static_cast<float>(msg->x);
         p.expectedY = static_cast<float>(msg->y);
 
-        if (!send_frame(McbMsgType::RELOCALIZE,
-                        reinterpret_cast<const uint8_t *>(&p), sizeof(p)))
-        {
+        const bool ok = send_frame(McbMsgType::RELOCALIZE,
+                        reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+        if (ok) {
+            relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+        } else {
             RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
                 "Failed to send RELOCALIZE");
         }
@@ -458,21 +644,19 @@ private:
     // Member variables
     // ═══════════════════════════════════════════════════════════════════════
 
-    // Serial
     int serial_fd_{-1};
     uint8_t tx_seq_{0};
     std::mutex write_mutex_;
     bool enforce_crc_{true};
 
-    // Read thread lifecycle
     std::atomic<bool> running_{false};
     std::thread read_thread_;
 
-    // Publishers
+    rclcpp::TimerBase::SharedPtr diag_timer_;
+
     rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr    pose_pub_;
     rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
 
-    // Subscribers
     rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr           nav_goal_sub_;
     rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr    cv_target_sub_;
     rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr           relocalize_sub_;

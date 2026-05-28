@@ -17,3 +17,16 @@ mcb_serial_bridge:
     # Drop frames whose CRC-8 (header) or CRC-16 (full frame) does not match.
     # Set to false only for debugging raw byte traffic.
     enforce_crc: true
+
+    # How often (seconds) to print the diagnostic stats summary to the console.
+    # The summary shows bytes received, valid frames decoded, CRC error counts,
+    # and published/subscribed message counts.  Set to 0 to disable.
+    #
+    # What you'll see in each case:
+    #   bytes=0, frames=0          → nothing arriving at all (cable? power? baud?)
+    #   bytes>0, frames=0          → bytes arriving but no valid frames (baud mismatch?
+    #                                  CRC errors? wrong frame format?)
+    #   bytes>0, frames>0, pose=0  → frames decoded but pose not publishing
+    #                                  (unexpected msgType from MCB?)
+    #   bytes>0, frames>0, pose>0  → everything healthy ✓
+    diag_interval_s: 5
