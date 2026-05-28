@@ -9,7 +9,7 @@
     Implements the DJI-framed UART protocol (CRC8 header / CRC16 frame) and
     maps all Thornbots message types to ROS topics.
   </description>
-  <maintainer email="jenninbl@RHIT.edu">Your Name</maintainer>
+  <maintainer email="jenninbl@RHIT.edu">Brooklyn</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
