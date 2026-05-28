@@ -47,7 +47,7 @@ rosidl_target_interfaces(dji_serial_bridge_node
 )
 
 # ── Install ────────────────────────────────────────────────────────────────────
-install(TARGETS mcb_serial_bridge_node
+install(TARGETS dji_serial_bridge_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

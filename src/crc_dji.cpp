@@ -21,7 +21,7 @@
  * along with Taproot.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "mcb_serial_bridge/crc_dji.hpp"
+#include "dji_serial_bridge/crc_dji.hpp"
 
 
 const uint8_t CRC8Table[256] = {
