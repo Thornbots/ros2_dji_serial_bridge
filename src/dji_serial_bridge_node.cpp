@@ -153,6 +153,9 @@ public:
         RCLCPP_INFO(get_logger(),
                     "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
                     baudrate);
+        // Clear NONBLOCK so subsequent reads behave normally (poll() handles blocking)
+        int fl = fcntl(serial_fd_, F_GETFL);
+        fcntl(serial_fd_, F_SETFL, fl & ~O_NONBLOCK);
 
         // ── Publishers  (MCB → Jetson) ────────────────────────────────────────
         pose_pub_ = create_publisher<dji_serial_bridge::msg::RobotPose>(
