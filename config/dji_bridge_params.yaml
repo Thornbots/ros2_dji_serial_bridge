@@ -1,4 +1,12 @@
-mcb_serial_bridge:
+# NOTE: the top-level key below intentionally uses the ROS 2 wildcard "/**"
+# instead of a specific node name. This file previously used
+# "mcb_serial_bridge:", which never matched the node's actual name
+# ("dji_serial_bridge", per dji_bridge.launch.py and the node's constructor),
+# so every parameter here was silently ignored at runtime and the bridge
+# always ran with hardcoded defaults regardless of what you set below.
+# "/**" applies to whichever node loads this file, and stays correct even
+# if the node is later renamed or remapped into a namespace.
+/**:
   ros__parameters:
     # Serial device.  On Jetson: /dev/ttyTHS1 (onboard UART)
     # or /dev/ttyUSB0 / /dev/sllidar for CP210x USB adapters.

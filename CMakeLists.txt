@@ -10,6 +10,7 @@ find_package(ament_cmake        REQUIRED)
 find_package(rclcpp             REQUIRED)
 find_package(std_msgs           REQUIRED)
 find_package(geometry_msgs      REQUIRED)
+find_package(vision_msgs        REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 # ── Generate custom messages ───────────────────────────────────────────────────
@@ -46,8 +47,30 @@ rosidl_target_interfaces(dji_serial_bridge_node
   ${PROJECT_NAME} "rosidl_typesupport_cpp"
 )
 
+# ── Vision -> CVTarget adapter executable ───────────────────────────────────────
+# Converts roi_depth_query's /roi_point (geometry_msgs/PointStamped, REP-103)
+# into this package's own CVTarget message for dji_serial_bridge_node.
+add_executable(point_to_cv_target_node
+  src/point_to_cv_target_node.cpp
+)
+
+target_include_directories(point_to_cv_target_node
+  PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/rosidl_generator_cpp>
+)
+
+ament_target_dependencies(point_to_cv_target_node
+  rclcpp
+  geometry_msgs
+  vision_msgs
+)
+
+rosidl_target_interfaces(point_to_cv_target_node
+  ${PROJECT_NAME} "rosidl_typesupport_cpp"
+)
+
 # ── Install ────────────────────────────────────────────────────────────────────
-install(TARGETS dji_serial_bridge_node
+install(TARGETS dji_serial_bridge_node point_to_cv_target_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
