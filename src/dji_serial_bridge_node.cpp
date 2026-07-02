@@ -641,7 +641,7 @@ private:
             ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
         
         // Log every ref_sys message received
-            debug_log = get_parameter("debug_log").as_bool();
+            const auto debug_log = get_parameter("debug_log").as_bool();
             if (debug_log){
         RCLCPP_INFO(get_logger(),
                     "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
@@ -716,7 +716,7 @@ private:
         {
             const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
             // Log every relocalize message sent
-            debug_log = get_parameter("debug_log").as_bool();
+            const auto debug_log = get_parameter("debug_log").as_bool();
             if (debug_log){
             RCLCPP_INFO(get_logger(),
                         "[relocalize TX #%lu] x=%.3f y=%.3f",
@@ -737,7 +737,6 @@ private:
     uint8_t tx_seq_{0};
     std::mutex write_mutex_;
     bool enforce_crc_{true};
-
     std::atomic<bool> running_{false};
     std::thread read_thread_;
 
