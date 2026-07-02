@@ -37,6 +37,10 @@ def generate_launch_description():
             default_value="115200",
             description="Serial baud rate in bits-per-second"),
         DeclareLaunchArgument(
+            "debug_log",
+            default_value="true",
+            description="Log everything"),
+        DeclareLaunchArgument(
             "params_file",
             default_value=PathJoinSubstitution(
                 [pkg_share, "config", "dji_bridge_params.yaml"]),
@@ -77,6 +81,7 @@ def generate_launch_description():
                 {
                     "device":   LaunchConfiguration("device"),
                     "baudrate": LaunchConfiguration("baudrate"),
+                    "debug_log": LaunchConfiguration("debug_log"),
                 },
             ],
             remappings=[
@@ -107,4 +112,5 @@ def generate_launch_description():
                 "estimate_velocity": LaunchConfiguration("estimate_velocity"),
             }],
         ),
+       
     ])

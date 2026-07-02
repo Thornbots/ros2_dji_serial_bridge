@@ -24,7 +24,7 @@
 //   read_poll_ms  (int)     : poll() timeout in milliseconds (10 is fine)
 //   enforce_crc   (bool)    : drop frames whose CRC does not match (default true)
 //   diag_interval_s (int)   : how often to print diagnostic stats (default 5)
-
+//   debug_log (bool)            : log everything if true
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
@@ -96,6 +96,7 @@ public:
         declare_parameter<int>("read_poll_ms", 20);
         declare_parameter<bool>("enforce_crc", true);
         declare_parameter<int>("diag_interval_s", 5);
+        declare_parameter<bool>("debug_log", true);
 
         const auto device = get_parameter("device").as_string();
         const auto baudrate = get_parameter("baudrate").as_int();
@@ -640,6 +641,8 @@ private:
             ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
         
         // Log every ref_sys message received
+            debug_log = get_parameter("debug_log").as_bool();
+            if (debug_log){
         RCLCPP_INFO(get_logger(),
                     "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
                     "blue=%u healing=%u reload=%u center=%u "
@@ -647,7 +650,7 @@ private:
                     count, raw.gameStage, raw.stageTimeRemaining, raw.robotHp, raw.robotID,
                     (b >> 7) & 1u, (b >> 6) & 1u, (b >> 5) & 1u, (b >> 4) & 1u,
                     (b >> 1) & 1u, b & 1u, raw.deltaAngleGotHitIn);
-        
+        }
         ref_sys_pub_->publish(msg);
     }
 
@@ -713,9 +716,11 @@ private:
         {
             const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
             // Log every relocalize message sent
+            debug_log = get_parameter("debug_log").as_bool();
+            if (debug_log){
             RCLCPP_INFO(get_logger(),
                         "[relocalize TX #%lu] x=%.3f y=%.3f",
-                        count, msg->x, msg->y);
+                        count, msg->x, msg->y);}
         }
         else
         {

@@ -38,3 +38,4 @@
     #                                  (unexpected msgType from MCB?)
     #   bytes>0, frames>0, pose>0  → everything healthy ✓
     diag_interval_s: 5
+    debug_log: true
