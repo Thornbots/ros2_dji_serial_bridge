@@ -638,19 +638,16 @@ private:
 
         const uint64_t count =
             ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (count == 1)
-        {
-            RCLCPP_INFO(get_logger(),
-                        "handle_ref_sys: FIRST ref_sys message published! "
-                        "stage=%u hp=%u robot_id=%u blue=%u chassis_power=%u gimbal_power=%u",
-                        raw.gameStage, raw.robotHp, raw.robotID,
-                        (b >> 7) & 1u, (b >> 1) & 1u, b & 1u);
-        }
-        else
-        {
-            RCLCPP_DEBUG(get_logger(),
-                         "handle_ref_sys #%lu: stage=%u hp=%u", count, raw.gameStage, raw.robotHp);
-        }
+        
+        // Log every ref_sys message received
+        RCLCPP_INFO(get_logger(),
+                    "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
+                    "blue=%u healing=%u reload=%u center=%u "
+                    "chassis_pwr=%u gimbal_pwr=%u delta_angle=%.1f",
+                    count, raw.gameStage, raw.stageTimeRemaining, raw.robotHp, raw.robotID,
+                    (b >> 7) & 1u, (b >> 6) & 1u, (b >> 5) & 1u, (b >> 4) & 1u,
+                    (b >> 1) & 1u, b & 1u, raw.deltaAngleGotHitIn);
+        
         ref_sys_pub_->publish(msg);
     }
 
@@ -714,7 +711,11 @@ private:
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
         if (ok)
         {
-            relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+            const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
+            // Log every relocalize message sent
+            RCLCPP_INFO(get_logger(),
+                        "[relocalize TX #%lu] x=%.3f y=%.3f",
+                        count, msg->x, msg->y);
         }
         else
         {
