@@ -236,6 +236,12 @@ private:
     std::atomic<uint64_t> nav_goal_msgs_tx_{0};
     std::atomic<uint64_t> cv_target_msgs_tx_{0};
     std::atomic<uint64_t> relocalize_msgs_tx_{0};
+    // Last chassis pose received from the MCB (via POSE_MSG / ~/pose). Cached so
+    // relocalize_callback can log the coordinate being overwritten. Written on
+    // the serial read thread, read on the executor thread — hence atomic.
+    std::atomic<float> last_pose_x_{0.0f};
+    std::atomic<float> last_pose_y_{0.0f};
+    std::atomic<bool>  have_pose_{false};
     // Consecutive poll() calls that returned 0 (no data).
     // Resets to 0 the moment any byte arrives.
     std::atomic<uint64_t> silent_polls_{0};
@@ -579,6 +585,12 @@ private:
         PoseDataPayload raw{};
         std::memcpy(&raw, payload, sizeof(raw));
 
+        // Cache the MCB's latest reported position so a subsequent relocalize
+        // can log the coordinate it is about to overwrite.
+        last_pose_x_.store(raw.x, std::memory_order_relaxed);
+        last_pose_y_.store(raw.y, std::memory_order_relaxed);
+        have_pose_.store(true, std::memory_order_relaxed);
+
         auto msg = dji_serial_bridge::msg::RobotPose{};
         msg.header.stamp = now();
         msg.x = raw.x;
@@ -715,12 +727,22 @@ private:
         if (ok)
         {
             const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
-            // Log every relocalize message sent
-            const auto debug_log = get_parameter("debug_log").as_bool();
-            if (debug_log){
-            RCLCPP_INFO(get_logger(),
-                        "[relocalize TX #%lu] x=%.3f y=%.3f",
-                        count, msg->x, msg->y);}
+            // Log every relocalize message sent: the pose the MCB last reported
+            // (the coordinate being overwritten) next to the new relocalized one.
+            if (have_pose_.load(std::memory_order_relaxed)) {
+                RCLCPP_INFO(get_logger(),
+                            "[relocalize TX #%lu] previous MCB pose (last received): "
+                            "x=%.3f y=%.3f  ->  new relocalized: x=%.3f y=%.3f",
+                            count,
+                            last_pose_x_.load(std::memory_order_relaxed),
+                            last_pose_y_.load(std::memory_order_relaxed),
+                            msg->x, msg->y);
+            } else {
+                RCLCPP_INFO(get_logger(),
+                            "[relocalize TX #%lu] previous MCB pose: N/A "
+                            "(no ~/pose received yet)  ->  new relocalized: x=%.3f y=%.3f",
+                            count, msg->x, msg->y);
+            }
         }
         else
         {
