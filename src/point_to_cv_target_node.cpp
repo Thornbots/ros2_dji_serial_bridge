@@ -121,8 +121,6 @@ private:
         const double x = -msg->point.y;
         const double y =  msg->point.z;
         const double z =  msg->point.x;
-        RCLCPP_INFO(get_logger(), "x: %f, y: %f", out.x, out.y);
-    
 
         double vx = 0.0, vy = 0.0, vz = 0.0;
         double ax = 0.0, ay = 0.0, az = 0.0;
