@@ -2,17 +2,9 @@
 // mcb_protocol.hpp
 //
 // Packed struct definitions that mirror the wire layout used by the MCB
-// (JetsonSubsystem.hpp / type_c_serial_test.hpp).  All multi-byte fields
+// (JetsonSubsystem.hpp / type_c_serial_test.hpp). All multi-byte fields
 // are little-endian, matching the ARM Cortex-M running modm.
-//
-// DJI UART frame layout (all offsets in bytes):
-//   [0]      0xA5         frame head
-//   [1-2]    dataLength   payload byte count (uint16_t LE)
-//   [3]      seq          rolling sequence counter
-//   [4]      crc8         CRC-8 over bytes [0..3]
-//   [5-6]    msgType      message ID (uint16_t LE)  ← enum McbMsgType
-//   [7..N]   payload      dataLength raw bytes
-//   [N+1,2]  crc16        CRC-16 over bytes [0..N]  (uint16_t LE)
+// see README.md for the DJI UART frame byte-offset diagram
 
 #include <cstdint>
 #include <cstddef>  // offsetof
@@ -59,16 +51,8 @@ static_assert(sizeof(PoseDataPayload) == 24, "PoseDataPayload size mismatch");
 
 // REF_SYS_MSG (id=3) — sent at ~5 Hz by the MCB, interleaved with POSE_MSG.
 // Mirror of struct RefSysMsg (modm_packed) in JetsonSubsystem.hpp.
-//
-// booleans bit layout (packed by MCB, MSB first):
-//   bit 7 : isOnBlueTeam
-//   bit 6 : isHealing
-//   bit 5 : isInReloadZone   (restoration OR exchange zone RFID)
-//   bit 4 : isInCenterZone   (central buff RFID)
-//   bit 3 : teamOccupiesCenter
-//   bit 2 : opponentOccupiesCenter
-//   bit 1 : chassisHasPower
-//   bit 0 : gimbalHasPower
+// Booleans byte bit layout (MSB first): see README.md for the full
+// bit-to-flag table (team/health/zone RFIDs/power flags).
 struct __attribute__((packed)) RefSysMsgPayload {
     uint8_t  gameStage;
     uint16_t stageTimeRemaining;

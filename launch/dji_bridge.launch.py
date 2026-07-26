@@ -1,15 +1,11 @@
 """
 dji_bridge.launch.py — Launch the Jetson <-> ROS 2 serial bridge.
 
-dji_serial_bridge_node talks to the MCB over UART, translating between the
-DJI-framed protocol and ROS topics for the five message types it knows
-about (nav_goal, cv_target, pose, ref_sys, relocalize). It has no
-opinion on where those ROS topics' other ends come from -- upstream
-producers (sentry_pkg's mcb_relay, the CV pipeline, etc.) publish/subscribe
-directly on this node's topics, remapped as needed.
-
-Override parameters from the command line, e.g.:
-  ros2 launch dji_serial_bridge dji_bridge.launch.py device:=/dev/ttyUSB0 baudrate:=115200
+dji_serial_bridge_node translates between the DJI-framed UART protocol and
+ROS topics for its five message types (nav_goal, cv_target, pose, ref_sys,
+relocalize). It has no opinion on where those topics' other ends come
+from. Override parameters from the command line
+(e.g. device:=/dev/ttyUSB0); see README.md for a full example.
 """
 
 from launch import LaunchDescription

@@ -2,29 +2,9 @@
 """
 test_bridge.py — DJI Serial Bridge diagnostic / smoke-test script.
 
-Runs two independent checks:
-
-  1. CONFIG CHECK  (no ROS, no MCB needed)
-     Verifies the serial device exists, is a char device, and is readable/
-     writable.  Also parses dji_bridge_params.yaml and cross-checks it.
-
-  2. LIVE TRAFFIC CHECK  (requires the bridge node to be running)
-     Subscribes to ~/pose and ~/ref_sys and waits up to --timeout seconds
-     for at least one message on each topic.  Prints a PASS / FAIL summary.
-
-Usage examples
---------------
-  # Config + live check (default timeout 10 s):
-  python3 scripts/test_bridge.py
-
-  # Override device and baud:
-  python3 scripts/test_bridge.py --device /dev/ttyUSB0 --baudrate 115200
-
-  # Config check only (no ROS):
-  python3 scripts/test_bridge.py --config-only
-
-  # Longer wait for slow MCB startup:
-  python3 scripts/test_bridge.py --timeout 30
+Runs a CONFIG CHECK (serial device exists/readable, cross-checked against
+dji_bridge_params.yaml) and a LIVE TRAFFIC CHECK (subscribes ~/pose and
+~/ref_sys, waits --timeout seconds for each). See --help for CLI options.
 """
 
 import argparse
