@@ -1,30 +1,11 @@
 // dji_serial_bridge_node.cpp
 //
-// ROS 2 node that bridges the Jetson-side serial protocol with ROS topics.
-//
-// The MCB (main control board) speaks a DJI-framed UART protocol where each
-// message payload is a raw packed C struct.  This node handles all five
-// message types defined in JetsonSubsystem.hpp:
-//
-//  ID  Direction       ROS topic          ROS msg type
-//  ──  ─────────────── ────────────────── ─────────────────────────────
-//   0  Jetson → MCB    ~/nav_goal         geometry_msgs/msg/Point
-//   1  Jetson → MCB    ~/cv_target        dji_serial_bridge/msg/CVTarget
-//   2  MCB   → Jetson  ~/pose             dji_serial_bridge/msg/RobotPose
-//   3  MCB   → Jetson  ~/ref_sys          dji_serial_bridge/msg/RefSysStatus
-//   4  Jetson → MCB    ~/relocalize       geometry_msgs/msg/Point
-//
-// Topics use the node's private namespace so you can remap them in a launch
-// file.  For example, ~/nav_goal resolves to /dji_serial_bridge/nav_goal by
-// default but can be remapped to /nav_goal.
-//
-// Parameters (see config/dji_bridge_params.yaml for defaults):
-//   device        (string)  : serial device path, e.g. /dev/ttyTHS1
-//   baudrate      (int)     : baud rate in bits-per-second, e.g. 115200
-//   read_poll_ms  (int)     : poll() timeout in milliseconds (10 is fine)
-//   enforce_crc   (bool)    : drop frames whose CRC does not match (default true)
-//   diag_interval_s (int)   : how often to print diagnostic stats (default 5)
-//   debug_log (bool)            : log everything if true
+// ROS 2 node that bridges the Jetson-side DJI-framed UART protocol (MCB)
+// with ROS topics, handling all five message types defined in
+// JetsonSubsystem.hpp. Topics live in the node's private namespace
+// (e.g. ~/nav_goal), so remap them in a launch file as needed.
+// Parameters are in config/dji_bridge_params.yaml.
+// see README.md for the message-type table and parameter list
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
