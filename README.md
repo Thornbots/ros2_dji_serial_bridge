@@ -21,6 +21,16 @@ Topics use the node's private namespace so you can remap them in a launch
 file. For example, `~/nav_goal` resolves to `/dji_serial_bridge/nav_goal` by
 default but can be remapped to `/nav_goal`.
 
+**CV_MSG (id=1) wire format changed 2026-07-28**: `CVTarget`/
+`CVDataPayload` dropped `v_x/v_y/v_z`/`a_x/a_y/a_z` (position + confidence
+only now, `CVDataPayload` shrank from 40 to 16 bytes, `confidence` moved
+from byte offset 36 to offset 12). This is a breaking change to the UART
+packet the MCB's firmware parses — the corresponding firmware-side struct
+(mirrored in the MCB's own `JetsonSubsystem.hpp`, outside this repo) must
+be updated to match before real-hardware CV aiming will work again; until
+then a firmware built against the old 40-byte layout will misparse this
+frame.
+
 ROS parameters (see `config/dji_bridge_params.yaml` for defaults):
 
 - `device` (string) : serial device path, e.g. `/dev/ttyTHS1`

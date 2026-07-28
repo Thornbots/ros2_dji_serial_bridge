@@ -676,12 +676,6 @@ private:
         p.x = msg->x;
         p.y = msg->y;
         p.z = msg->z;
-        p.v_x = msg->v_x;
-        p.v_y = msg->v_y;
-        p.v_z = msg->v_z;
-        p.a_x = msg->a_x;
-        p.a_y = msg->a_y;
-        p.a_z = msg->a_z;
         p.confidence = msg->confidence;
 
         const bool ok = send_frame(McbMsgType::CV_MSG,

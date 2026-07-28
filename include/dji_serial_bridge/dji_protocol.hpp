@@ -79,15 +79,9 @@ struct __attribute__((packed)) CVDataPayload {
     float x;          // position  (metres)
     float y;
     float z;
-    float v_x;        // velocity  (m/s)
-    float v_y;
-    float v_z;
-    float a_x;        // acceleration (m/s²)
-    float a_y;
-    float a_z;
     float confidence; // [0.0, 1.0]
 };
-static_assert(sizeof(CVDataPayload) == 40, "CVDataPayload size mismatch");
+static_assert(sizeof(CVDataPayload) == 16, "CVDataPayload size mismatch");
 
 // RELOCALIZE (id=4) — lidar-estimated robot position sent back to the MCB
 // so it can update its odometry origin.
