@@ -3,6 +3,13 @@
 ROS 2 node that bridges the Jetson-side DJI-framed UART protocol spoken by
 the MCB (main control board) with ROS 2 topics.
 
+> **⚠ Firmware coordination needed (2026-07-28):** `CV_MSG` (id=1)'s wire
+> format changed — `CVDataPayload` shrank from 40 to 16 bytes (velocity/
+> acceleration fields dropped, `confidence` moved to byte offset 12). The
+> MCB firmware's matching struct (outside this repo) must be updated to
+> match before real-hardware CV aiming works again; until then it will
+> misparse this frame. See `## Notes` below for the full detail.
+
 ## Notes
 
 ### Message types (dji_serial_bridge_node.cpp)
