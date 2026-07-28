@@ -18,7 +18,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RefSysStatus.msg"
   "msg/CVTarget.msg"
   "msg/FireCommand.msg"
-  DEPENDENCIES std_msgs
+  "msg/PanelDetection.msg"
+  DEPENDENCIES std_msgs geometry_msgs
 )
 
 # Make generated headers available before the executable target is defined.
