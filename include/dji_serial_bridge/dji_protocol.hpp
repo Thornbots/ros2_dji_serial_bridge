@@ -73,15 +73,17 @@ struct __attribute__((packed)) ROSDataPayload {
 };
 static_assert(sizeof(ROSDataPayload) == 8, "ROSDataPayload size mismatch");
 
-// CV_MSG (id=1) — computer-vision target state in the camera frame.
-// Mirror of struct CVData in JetsonSubsystem.hpp.
+// CV_MSG (id=1) — computer-vision aim point, ROOT-FRAME POSITION (not a
+// camera-frame offset, not a barrel attitude -- Type-C applies its own
+// ballistics on top). Mirror of struct CVData in JetsonSubsystem.hpp.
 struct __attribute__((packed)) CVDataPayload {
-    float x;          // position  (metres)
-    float y;
-    float z;
-    float confidence; // [0.0, 1.0]
+    float   x;          // position, root frame, forward (metres)
+    float   y;          // position, root frame, left    (metres)
+    float   z;          // position, root frame, up      (metres)
+    float   confidence; // [0.0, 1.0]
+    uint8_t flags;      // bit0 lead_applied, bit1 track_valid
 };
-static_assert(sizeof(CVDataPayload) == 16, "CVDataPayload size mismatch");
+static_assert(sizeof(CVDataPayload) == 17, "CVDataPayload size mismatch");
 
 // RELOCALIZE (id=4) — lidar-estimated robot position sent back to the MCB
 // so it can update its odometry origin.

@@ -677,6 +677,7 @@ private:
         p.y = msg->y;
         p.z = msg->z;
         p.confidence = msg->confidence;
+        p.flags = (msg->lead_applied ? 0x01 : 0x00) | (msg->track_valid ? 0x02 : 0x00);
 
         const bool ok = send_frame(McbMsgType::CV_MSG,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
