@@ -19,6 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CVTarget.msg"
   "msg/FireCommand.msg"
   "msg/PanelDetection.msg"
+  "msg/PanelDetectionArray.msg"
   DEPENDENCIES std_msgs geometry_msgs
 )
 

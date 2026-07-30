@@ -9,3 +9,5 @@ geometry_msgs/Point32 center      # deprojected bbox-center point
 float32 depth_m                   # mean sampled depth used for deprojection (planar assumption)
 float32 confidence                # max hypothesis score, forwarded from Detection2D
 int32 class_id                    # best hypothesis class_id, -1 if none
+uint32 robot_track_id             # 0 = ungrouped (raw roi_depth_query output);
+                                   # set by sentry_pkg/target_selector.py once grouped
