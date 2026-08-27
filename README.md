@@ -11,9 +11,9 @@ the MCB (main control board) with ROS 2 topics.
 > byte (bit0 `lead_applied`, bit1 `track_valid`). The MCB firmware's
 > matching struct (outside this repo) must be updated to match both the
 > new size and the new semantics before real-hardware CV aiming works
-> again — a firmware built against either older layout will misparse this
-> frame, and even a firmware that happens to parse the new byte layout
-> correctly would aim wrong if it still treats x/y/z as camera-relative.
+> again. A firmware built against either older layout will misparse this
+> frame, and even one that parses the new byte layout correctly will aim
+> wrong if it still treats x/y/z as camera-relative.
 > See `## Notes` below for the full detail.
 
 ## Notes
@@ -39,17 +39,17 @@ dropped `v_x/v_y/v_z`/`a_x/a_y/a_z` (2026-07-28, 40 -> 16 bytes,
 `confidence` moved from byte offset 36 to offset 12). Then the plan's
 Phase 4 changed `x/y/z`'s meaning from a camera-frame offset to a
 **ROOT-FRAME POSITION** (Type-C aims at this point directly and applies
-its own gravity/drag/muzzle geometry — it is never a barrel attitude) and
+its own gravity/drag/muzzle geometry; it is never a barrel attitude) and
 appended a `flags` byte (bit0 `lead_applied`: does x/y/z include the
 Phase 3 intercept/lead solve; bit1 `track_valid`: is it backed by a
 converged `target_tracker` estimate, or an unfiltered raw panel position),
 growing `CVDataPayload` to 17 bytes. Still no velocity/spin fields on the
-wire by design — those stay ROS-internal on `sentry_pkg`'s
+wire by design: those stay ROS-internal on `sentry_pkg`'s
 `/cv/target_state` (`TargetState.msg`). Both changes are breaking changes
-to the UART packet the MCB's firmware parses — the corresponding
+to the UART packet the MCB's firmware parses. The corresponding
 firmware-side struct (mirrored in the MCB's own `JetsonSubsystem.hpp`,
 outside this repo) must be updated to match before real-hardware CV
-aiming will work again; until then a firmware built against either older
+aiming works again; until then, a firmware built against either older
 layout will misparse this frame, or parse the bytes correctly while still
 aiming at the wrong point.
 
@@ -62,9 +62,9 @@ ROS parameters (see `config/dji_bridge_params.yaml` for defaults):
 - `diag_interval_s` (int) : how often to print diagnostic stats (default 5)
 - `debug_log` (bool) : log everything if true
 
-The node has no opinion on the other ends of these topics — upstream
-producers/consumers (sentry_pkg's mcb_relay, the CV pipeline, etc.)
-publish/subscribe directly on these topics, remapped as needed.
+The node has no opinion on the other ends of these topics. Upstream
+producers and consumers (sentry_pkg's mcb_relay, the CV pipeline, etc.)
+publish or subscribe directly, remapped as needed.
 
 ### DJI UART frame layout (dji_protocol.hpp)
 
