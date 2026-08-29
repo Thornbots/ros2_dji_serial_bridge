@@ -59,6 +59,11 @@ static speed_t baud_to_speed(int baud)
     case 4000000:
         return B4000000;
     default:
+        RCLCPP_WARN(rclcpp::get_logger("dji_serial_bridge"),
+                    "Unsupported baudrate %d, falling back to 921600. A wrong "
+                    "line speed shows up as CRC/framing errors, not as a port "
+                    "error, so check this first if frames won't decode.",
+                    baud);
         return B921600;
     }
 }
@@ -74,7 +79,7 @@ public:
         // ── Parameters ────────────────────────────────────────────────────────
         declare_parameter<std::string>("device", "/dev/ttyTHS1");
         declare_parameter<int>("baudrate", 115200);
-        declare_parameter<int>("read_poll_ms", 20);
+        declare_parameter<int>("read_poll_ms", 10);
         declare_parameter<bool>("enforce_crc", true);
         declare_parameter<int>("diag_interval_s", 5);
         declare_parameter<bool>("debug_log", true);
@@ -83,6 +88,7 @@ public:
         const auto baudrate = get_parameter("baudrate").as_int();
         const auto poll_ms = static_cast<int>(get_parameter("read_poll_ms").as_int());
         enforce_crc_ = get_parameter("enforce_crc").as_bool();
+        debug_log_ = get_parameter("debug_log").as_bool();
         const auto diag_s = get_parameter("diag_interval_s").as_int();
 
         // ── Pre-open device diagnostics ───────────────────────────────────────
@@ -633,16 +639,21 @@ private:
         const uint64_t count =
             ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
         
-        // Log every ref_sys message received
-            const auto debug_log = get_parameter("debug_log").as_bool();
-            if (debug_log){
-        RCLCPP_INFO(get_logger(),
-                    "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
-                    "blue=%u healing=%u reload=%u center=%u "
-                    "chassis_pwr=%u gimbal_pwr=%u delta_angle=%.1f",
-                    count, raw.gameStage, raw.stageTimeRemaining, raw.robotHp, raw.robotID,
-                    (b >> 7) & 1u, (b >> 6) & 1u, (b >> 5) & 1u, (b >> 4) & 1u,
-                    (b >> 1) & 1u, b & 1u, raw.deltaAngleGotHitIn);
+        // Log every ref_sys message received. debug_log_ is cached from the
+        // parameter at construction -- this runs on the serial read thread at
+        // ~5 Hz, so don't do a parameter lookup per frame.
+        if (debug_log_)
+        {
+            RCLCPP_INFO(get_logger(),
+                        "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
+                        "blue=%u healing=%u reload=%u center=%u "
+                        "team_center=%u opp_center=%u "
+                        "chassis_pwr=%u gimbal_pwr=%u delta_angle=%.1f",
+                        count, raw.gameStage, raw.stageTimeRemaining, raw.robotHp,
+                        raw.robotID,
+                        (b >> 7) & 1u, (b >> 6) & 1u, (b >> 5) & 1u, (b >> 4) & 1u,
+                        (b >> 3) & 1u, (b >> 2) & 1u,
+                        (b >> 1) & 1u, b & 1u, raw.deltaAngleGotHitIn);
         }
         ref_sys_pub_->publish(msg);
     }
@@ -735,6 +746,7 @@ private:
     uint8_t tx_seq_{0};
     std::mutex write_mutex_;
     bool enforce_crc_{true};
+    bool debug_log_{true};
     std::atomic<bool> running_{false};
     std::thread read_thread_;
 
