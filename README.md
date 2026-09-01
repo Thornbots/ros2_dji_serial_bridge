@@ -19,7 +19,8 @@ the MCB (main control board) with ROS 2 topics.
 
 ### Message types (dji_serial_bridge_node.cpp)
 
-The node handles all five message types defined in JetsonSubsystem.hpp:
+The node handles all five message types defined in the MCB firmware's
+`JetsonSubsystem.hpp`:
 
 | ID | Direction        | ROS topic     | ROS msg type                          |
 |----|-------------------|---------------|----------------------------------------|
@@ -33,23 +34,16 @@ Topics use the node's private namespace so you can remap them in a launch
 file. For example, `~/nav_goal` resolves to `/dji_serial_bridge/nav_goal` by
 default but can be remapped to `/nav_goal`.
 
-**CV_MSG (id=1) wire format history**: `CVTarget`/`CVDataPayload` first
-dropped `v_x/v_y/v_z`/`a_x/a_y/a_z` (2026-07-28, 40 -> 16 bytes,
-`confidence` moved from byte offset 36 to offset 12). Then `x/y/z`'s
-meaning changed from a camera-frame offset to a **ROOT-FRAME POSITION**
-(Type-C aims at this point directly and applies its own
-gravity/drag/muzzle geometry; it is never a barrel attitude) and appended
-a `flags` byte (bit0 `lead_applied`: does x/y/z include the intercept/lead
-solve; bit1 `track_valid`: is it backed by a converged `target_tracker`
-estimate, or an unfiltered raw panel position), growing `CVDataPayload` to
-17 bytes. Still no velocity/spin fields on the wire by design: those stay
-ROS-internal on `sentry_pkg`'s `/cv/target_state` (`TargetState.msg`).
-Both changes are breaking changes to the UART packet the MCB's firmware
-parses. The corresponding firmware-side struct (mirrored in the MCB's own
-`JetsonSubsystem.hpp`, outside this repo) must be updated to match before
-real-hardware CV aiming works again; until then, a firmware built against
-either older layout will misparse this frame, or parse the bytes correctly
-while still aiming at the wrong point.
+**CV_MSG (id=1) wire format**, detail behind the warning at the top.
+Dropping `v_x/v_y/v_z`/`a_x/a_y/a_z` took `CVDataPayload` 40 -> 16 bytes
+and moved `confidence` from byte offset 36 to 12. The `flags` byte
+appended after that took it to 17: bit0 `lead_applied` (does x/y/z include
+the intercept/lead solve), bit1 `track_valid` (is it backed by a converged
+`target_tracker` estimate rather than an unfiltered raw panel position).
+`x/y/z` is a point Type-C aims at directly, applying its own
+gravity/drag/muzzle geometry -- never a barrel attitude. Velocity and spin
+stay off the wire by design, ROS-internal on `sentry_pkg`'s
+`/cv/target_state` (`TargetState.msg`).
 
 ROS parameters (see `config/dji_bridge_params.yaml` for defaults):
 
@@ -114,24 +108,13 @@ What you'll see in each case:
 | bytes>0, frames>0, pose=0           | frames decoded but pose not publishing (unexpected msgType from MCB?) |
 | bytes>0, frames>0, pose>0           | everything healthy                                        |
 
-### test_bridge.py usage examples
+### Usage
 
-```
-# Config + live check (default timeout 10 s):
-python3 scripts/test_bridge.py
-
-# Override device and baud:
-python3 scripts/test_bridge.py --device /dev/ttyUSB0 --baudrate 115200
-
-# Config check only (no ROS):
-python3 scripts/test_bridge.py --config-only
-
-# Longer wait for slow MCB startup:
-python3 scripts/test_bridge.py --timeout 30
-```
-
-### dji_bridge.launch.py usage example
-
-```
+```bash
 ros2 launch dji_serial_bridge dji_bridge.launch.py device:=/dev/ttyUSB0 baudrate:=115200
+
+python3 scripts/test_bridge.py                       # config + live check, 10s timeout
+python3 scripts/test_bridge.py --config-only         # config check, no ROS
+python3 scripts/test_bridge.py --timeout 30          # slow MCB startup
+python3 scripts/test_bridge.py --device /dev/ttyUSB0 --baudrate 115200
 ```
