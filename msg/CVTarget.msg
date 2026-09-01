@@ -3,8 +3,8 @@
 # x/y/z is a ROOT-FRAME POSITION (REP-103: x forward, y left, z up), not a
 # camera-frame offset and not a barrel attitude -- Type-C applies its own
 # ballistics (gravity, drag, muzzle geometry) on top of this point. No
-# velocity/spin fields on the wire by design -- see README.md's "CVTarget
-# velocity/acceleration fields" note and the plan's Phase 4.
+# velocity/spin fields on the wire by design -- see README.md's
+# "CV_MSG (id=1) wire format history" note.
 std_msgs/Header header
 
 float32 x               # aim point position -- forward (m), root frame

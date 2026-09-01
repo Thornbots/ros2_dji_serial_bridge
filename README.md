@@ -3,18 +3,17 @@
 ROS 2 node that bridges the Jetson-side DJI-framed UART protocol spoken by
 the MCB (main control board) with ROS 2 topics.
 
-> **⚠ Firmware coordination needed:** `CV_MSG` (id=1)'s wire format
-> changed twice. First (2026-07-28) `CVDataPayload` shrank from 40 to 16
-> bytes (velocity/acceleration fields dropped). Then (plan Phase 4)
-> `x/y/z`'s **meaning** changed from a camera-frame offset to a ROOT-FRAME
-> POSITION, and the struct grew back to 17 bytes with a trailing `flags`
-> byte (bit0 `lead_applied`, bit1 `track_valid`). The MCB firmware's
-> matching struct (outside this repo) must be updated to match both the
-> new size and the new semantics before real-hardware CV aiming works
-> again. A firmware built against either older layout will misparse this
-> frame, and even one that parses the new byte layout correctly will aim
-> wrong if it still treats x/y/z as camera-relative.
-> See `## Notes` below for the full detail.
+> **⚠ Firmware coordination needed:** `CV_MSG` (id=1)'s wire format changed
+> twice. First (2026-07-28) `CVDataPayload` shrank from 40 to 16 bytes
+> (velocity/acceleration fields dropped). Then `x/y/z`'s **meaning** changed
+> from a camera-frame offset to a ROOT-FRAME POSITION, and the struct grew
+> back to 17 bytes with a trailing `flags` byte (bit0 `lead_applied`, bit1
+> `track_valid`). The MCB firmware's matching struct (outside this repo)
+> must be updated to match both the new size and the new semantics before
+> real-hardware CV aiming works again. A firmware built against either older
+> layout will misparse this frame, and even one that parses the new byte
+> layout correctly will aim wrong if it still treats x/y/z as
+> camera-relative. See `## Notes` below for the full detail.
 
 ## Notes
 
@@ -36,22 +35,21 @@ default but can be remapped to `/nav_goal`.
 
 **CV_MSG (id=1) wire format history**: `CVTarget`/`CVDataPayload` first
 dropped `v_x/v_y/v_z`/`a_x/a_y/a_z` (2026-07-28, 40 -> 16 bytes,
-`confidence` moved from byte offset 36 to offset 12). Then the plan's
-Phase 4 changed `x/y/z`'s meaning from a camera-frame offset to a
-**ROOT-FRAME POSITION** (Type-C aims at this point directly and applies
-its own gravity/drag/muzzle geometry; it is never a barrel attitude) and
-appended a `flags` byte (bit0 `lead_applied`: does x/y/z include the
-Phase 3 intercept/lead solve; bit1 `track_valid`: is it backed by a
-converged `target_tracker` estimate, or an unfiltered raw panel position),
-growing `CVDataPayload` to 17 bytes. Still no velocity/spin fields on the
-wire by design: those stay ROS-internal on `sentry_pkg`'s
-`/cv/target_state` (`TargetState.msg`). Both changes are breaking changes
-to the UART packet the MCB's firmware parses. The corresponding
-firmware-side struct (mirrored in the MCB's own `JetsonSubsystem.hpp`,
-outside this repo) must be updated to match before real-hardware CV
-aiming works again; until then, a firmware built against either older
-layout will misparse this frame, or parse the bytes correctly while still
-aiming at the wrong point.
+`confidence` moved from byte offset 36 to offset 12). Then `x/y/z`'s
+meaning changed from a camera-frame offset to a **ROOT-FRAME POSITION**
+(Type-C aims at this point directly and applies its own
+gravity/drag/muzzle geometry; it is never a barrel attitude) and appended
+a `flags` byte (bit0 `lead_applied`: does x/y/z include the intercept/lead
+solve; bit1 `track_valid`: is it backed by a converged `target_tracker`
+estimate, or an unfiltered raw panel position), growing `CVDataPayload` to
+17 bytes. Still no velocity/spin fields on the wire by design: those stay
+ROS-internal on `sentry_pkg`'s `/cv/target_state` (`TargetState.msg`).
+Both changes are breaking changes to the UART packet the MCB's firmware
+parses. The corresponding firmware-side struct (mirrored in the MCB's own
+`JetsonSubsystem.hpp`, outside this repo) must be updated to match before
+real-hardware CV aiming works again; until then, a firmware built against
+either older layout will misparse this frame, or parse the bytes correctly
+while still aiming at the wrong point.
 
 ROS parameters (see `config/dji_bridge_params.yaml` for defaults):
 
