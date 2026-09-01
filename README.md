@@ -34,14 +34,14 @@ Topics use the node's private namespace so you can remap them in a launch
 file. For example, `~/nav_goal` resolves to `/dji_serial_bridge/nav_goal` by
 default but can be remapped to `/nav_goal`.
 
-**CV_MSG (id=1) wire format**, detail behind the warning at the top.
+CV_MSG (id=1) wire format, with detail behind the warning at the top.
 Dropping `v_x/v_y/v_z`/`a_x/a_y/a_z` took `CVDataPayload` 40 -> 16 bytes
 and moved `confidence` from byte offset 36 to 12. The `flags` byte
 appended after that took it to 17: bit0 `lead_applied` (does x/y/z include
 the intercept/lead solve), bit1 `track_valid` (is it backed by a converged
 `target_tracker` estimate rather than an unfiltered raw panel position).
 `x/y/z` is a point Type-C aims at directly, applying its own
-gravity/drag/muzzle geometry -- never a barrel attitude. Velocity and spin
+gravity/drag/muzzle geometry, never a barrel attitude. Velocity and spin
 stay off the wire by design, ROS-internal on `sentry_pkg`'s
 `/cv/target_state` (`TargetState.msg`).
 
