@@ -67,4 +67,19 @@ install(PROGRAMS scripts/test_bridge.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# ── Tests ──────────────────────────────────────────────────────────
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  # crc_dji.* is vendored Taproot (GPL-3.0, U. of Washington), not ours
+  # to relicense, so it is excluded from the copyright check rather than
+  # given this package's Apache header.
+  set(ament_cmake_copyright_FOUND TRUE)
+  ament_lint_auto_find_test_dependencies()
+  find_package(ament_cmake_copyright REQUIRED)
+  ament_copyright(EXCLUDE
+    src/crc_dji.cpp
+    include/dji_serial_bridge/crc_dji.hpp
+  )
+endif()
+
 ament_package()

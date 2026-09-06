@@ -42,7 +42,7 @@ the intercept/lead solve), bit1 `track_valid` (is it backed by a converged
 `target_tracker` estimate rather than an unfiltered raw panel position).
 `x/y/z` is a point Type-C aims at directly, applying its own
 gravity/drag/muzzle geometry, never a barrel attitude. Velocity and spin
-stay off the wire by design, ROS-internal on `sentry_pkg`'s
+stay off the wire by design, ROS-internal on `thornbots_pkg`'s
 `/cv/target_state` (`TargetState.msg`).
 
 ROS parameters (see `config/dji_bridge_params.yaml` for defaults):
@@ -55,7 +55,7 @@ ROS parameters (see `config/dji_bridge_params.yaml` for defaults):
 - `debug_log` (bool) : log everything if true
 
 The node has no opinion on the other ends of these topics. Upstream
-producers and consumers (sentry_pkg's mcb_relay, the CV pipeline, etc.)
+producers and consumers (thornbots_pkg's mcb_relay, the CV pipeline, etc.)
 publish or subscribe directly, remapped as needed.
 
 ### DJI UART frame layout (dji_protocol.hpp)

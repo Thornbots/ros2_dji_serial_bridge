@@ -1,4 +1,4 @@
-# Computer-vision aim point published by sentry_pkg's point_to_cv_target.py.
+# Computer-vision aim point published by thornbots_pkg's point_to_cv_target.py.
 # Forwarded to the Jetson as CV_MSG (id=1) so the gimbal controller can aim.
 # x/y/z is a ROOT-FRAME POSITION (REP-103: x forward, y left, z up), not a
 # camera-frame offset and not a barrel attitude -- Type-C applies its own
