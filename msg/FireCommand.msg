@@ -1,4 +1,4 @@
-# Fire decision published by sentry_pkg's firing logic.
+# Fire decision published by thornbots_pkg's firing logic.
 std_msgs/Header header  # header.stamp = decision time
 
 bool fire             # true = fire

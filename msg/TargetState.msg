@@ -1,4 +1,4 @@
-# Tracked-target state published by sentry_pkg's target_tracker.py.
+# Tracked-target state published by thornbots_pkg's target_tracker.py.
 # ROS-internal only -- never crosses the UART wire (see CVTarget.msg for
 # the lean wire-format counterpart). Frame: odom (see target_tracker.py).
 std_msgs/Header header            # stamp = detection stamp; frame_id = odom

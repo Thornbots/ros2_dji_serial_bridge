@@ -8,7 +8,7 @@ struct.
 The ROS package name is `dji_serial_bridge`, not the directory name.
 `--packages-select ros2_dji_serial_bridge` silently selects nothing.
 
-Normally started by `sentry_pkg`'s `auto.launch.py` when `real_hardware:=true`,
+Normally started by `thornbots_pkg`'s `auto.launch.py` when `real_hardware:=true`,
 not launched standalone.
 
 Shadowed by `/workspaces/ros2_ws` (`Dockerfile.thornbots`, `RECLONE_SERIAL`).
@@ -21,7 +21,7 @@ needs a rebuild.
 ## Scope
 
 - Stays a pure UART/DJI-protocol translator: no application logic, and nothing
-  but `sentry_pkg`'s `mcb_relay` may publish or subscribe on its topics.
+  but `thornbots_pkg`'s `mcb_relay` may publish or subscribe on its topics.
   Anything that wants to reach the MCB goes through that relay; adding a direct
   publisher here is the wrong fix.
 - Wire-format changes need firmware coordination. The MCB's matching struct
