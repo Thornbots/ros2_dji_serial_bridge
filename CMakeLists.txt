@@ -69,17 +69,16 @@ install(PROGRAMS scripts/test_bridge.py
 
 # ── Tests ──────────────────────────────────────────────────────────
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  # crc_dji.* is vendored Taproot (GPL-3.0, U. of Washington), not ours
-  # to relicense, so it is excluded from the copyright check rather than
-  # given this package's Apache header.
-  set(ament_cmake_copyright_FOUND TRUE)
-  ament_lint_auto_find_test_dependencies()
-  find_package(ament_cmake_copyright REQUIRED)
-  ament_copyright(EXCLUDE
-    src/crc_dji.cpp
-    include/dji_serial_bridge/crc_dji.hpp
+  # 1. Define exclusions BEFORE the auto-linter runs
+  set(AMENT_CMAKE_COPYRIGHT_EXCLUDE
+    "src/crc_dji.cpp"
+    "include/dji_serial_bridge/crc_dji.hpp"
   )
+
+  # 2. Find and execute auto-lint dependencies
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
 endif()
+
 
 ament_package()
