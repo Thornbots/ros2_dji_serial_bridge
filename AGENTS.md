@@ -11,9 +11,9 @@ The ROS package name is `dji_serial_bridge`, not the directory name.
 Normally started by `thornbots_pkg`'s `auto.launch.py` when `real_hardware:=true`,
 not launched standalone.
 
-Shadowed by `/workspaces/ros2_ws` (`Dockerfile.thornbots`, `RECLONE_SERIAL`).
-Once built locally, a `src/` edit is live under `dexec.sh` but not in the user's
-terminal, which resolves to the image-baked clone. Confirm with
+Shadowed by `/workspaces/ros2_ws` (`Dockerfile.thornbots` copies this directory
+in at build time). Once built locally, a `src/` edit is live under `dexec.sh`
+but not in the user's terminal, which resolves to the image-baked snapshot. Confirm with
 `../isaac_ros_common/scripts/dexec.sh -- ros2 pkg prefix dji_serial_bridge`.
 This is C++, so `--symlink-install` doesn't help, and a source change always
 needs a rebuild.
