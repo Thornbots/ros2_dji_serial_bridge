@@ -31,6 +31,13 @@ firmware structs are updated:
   matches, every pose frame fails the length check and `~/pose` publishes
   nothing.
 
+A third is decided but not designed: **`CV_MSG` (id=1) should absorb
+`FireCommand` as a fire-delay field**, so aim and fire cross as one frame
+instead of the fire decision having its own ID. This grows `CVDataPayload`
+again and so is a firmware change like any other. `UART_PROTOCOL.md`'s "Not
+on the wire" section has the reasoning and the open question about what the
+delay is measured from.
+
 ## Topics
 
 Five, one per message ID: `~/nav_goal`, `~/cv_target`, `~/pose`, `~/ref_sys`,
