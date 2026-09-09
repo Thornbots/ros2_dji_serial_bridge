@@ -5,7 +5,7 @@
 // JetsonSubsystem.hpp. Topics live in the node's private namespace
 // (e.g. ~/nav_goal), so remap them in a launch file as needed.
 // Parameters are in config/dji_bridge_params.yaml.
-// see README.md for the message-type table and parameter list
+// see UART_PROTOCOL.md for the wire formats, README.md for parameters
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
@@ -229,6 +229,8 @@ private:
     std::atomic<float> last_pose_x_{0.0f};
     std::atomic<float> last_pose_y_{0.0f};
     std::atomic<bool>  have_pose_{false};
+    // Last odomStatus byte seen, so handle_pose logs transitions, not every frame.
+    std::atomic<uint8_t> last_odom_status_{0};
     // Consecutive poll() calls that returned 0 (no data).
     // Resets to 0 the moment any byte arrives.
     std::atomic<uint64_t> silent_polls_{0};
@@ -559,6 +561,20 @@ private:
     // Incoming message handlers  (MCB → Jetson)
     // ═══════════════════════════════════════════════════════════════════════
 
+    // Names for PoseDataPayload::odomStatus, for logs only.
+    static const char *odom_status_name(uint8_t s)
+    {
+        switch (s)
+        {
+        case 0: return "ok";
+        case 1: return "encoder fault";
+        case 2: return "imu fault";
+        case 3: return "slip";
+        case 4: return "unknown";
+        default: return "undefined code";
+        }
+    }
+
     void handle_pose(const uint8_t *payload, uint16_t len)
     {
         if (len != sizeof(PoseDataPayload))
@@ -586,6 +602,26 @@ private:
         msg.vel_y = raw.vel_y;
         msg.head_pitch = raw.head_pitch;
         msg.head_yaw = raw.head_yaw;
+        msg.odom_status = raw.odomStatus;
+
+        // Pose arrives at 100 Hz, so log the status byte only when it moves.
+        const uint8_t prev_status =
+            last_odom_status_.exchange(raw.odomStatus, std::memory_order_relaxed);
+        if (raw.odomStatus != prev_status)
+        {
+            if (raw.odomStatus == 0)
+            {
+                RCLCPP_INFO(get_logger(),
+                            "odom_status: recovered (was %u) — MCB x/y trustworthy again",
+                            prev_status);
+            }
+            else
+            {
+                RCLCPP_WARN(get_logger(),
+                            "odom_status: %u (%s) — MCB x/y/vel not trustworthy",
+                            raw.odomStatus, odom_status_name(raw.odomStatus));
+            }
+        }
 
         const uint64_t count =
             pose_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -593,8 +629,10 @@ private:
         {
             RCLCPP_INFO(get_logger(),
                         "handle_pose: FIRST pose message published! "
-                        "x=%.3f y=%.3f vel_x=%.3f vel_y=%.3f pitch=%.3f yaw=%.3f",
-                        raw.x, raw.y, raw.vel_x, raw.vel_y, raw.head_pitch, raw.head_yaw);
+                        "x=%.3f y=%.3f vel_x=%.3f vel_y=%.3f pitch=%.3f yaw=%.3f "
+                        "odom_status=%u (%s)",
+                        raw.x, raw.y, raw.vel_x, raw.vel_y, raw.head_pitch, raw.head_yaw,
+                        raw.odomStatus, odom_status_name(raw.odomStatus));
         }
         else
         {

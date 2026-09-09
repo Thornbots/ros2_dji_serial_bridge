@@ -4,7 +4,7 @@
 // Packed struct definitions that mirror the wire layout used by the MCB
 // (JetsonSubsystem.hpp / type_c_serial_test.hpp). All multi-byte fields
 // are little-endian, matching the ARM Cortex-M running modm.
-// see README.md for the DJI UART frame byte-offset diagram
+// see UART_PROTOCOL.md for the frame diagram and every payload table
 
 #include <cstdint>
 #include <cstddef>  // offsetof
@@ -39,19 +39,24 @@ static constexpr size_t CRC8_COVERAGE = offsetof(FrameHeader, crc8);  // == 4
 
 // POSE_MSG (id=2) — sent at 100 Hz by the MCB.
 // Mirror of struct PoseData (modm_packed) in JetsonSubsystem.hpp.
+// Trailing odomStatus byte rides along with every pose rather than arriving
+// as its own message, so the verdict can never be newer or older than the
+// x/y it applies to. see UART_PROTOCOL.md for the status code table
 struct __attribute__((packed)) PoseDataPayload {
-    float x;           // chassis X  (odometry, metres)
-    float y;           // chassis Y  (odometry, metres)
-    float vel_x;       // chassis vX (m/s)
-    float vel_y;       // chassis vY (m/s)
-    float head_pitch;  // gimbal pitch encoder value (radians)
-    float head_yaw;    // gimbal yaw relative to world (radians)
+    float   x;           // chassis X  (odometry, metres)
+    float   y;           // chassis Y  (odometry, metres)
+    float   vel_x;       // chassis vX (m/s)
+    float   vel_y;       // chassis vY (m/s)
+    float   head_pitch;  // gimbal pitch encoder value (radians)
+    float   head_yaw;    // gimbal yaw relative to world (radians)
+    uint8_t odomStatus;  // 0 ok, 1 encoder, 2 imu, 3 slip, 4 unknown; non-zero
+                         // means x/y/vel_x/vel_y are not trustworthy
 };
-static_assert(sizeof(PoseDataPayload) == 24, "PoseDataPayload size mismatch");
+static_assert(sizeof(PoseDataPayload) == 25, "PoseDataPayload size mismatch");
 
 // REF_SYS_MSG (id=3) — sent at ~5 Hz by the MCB, interleaved with POSE_MSG.
 // Mirror of struct RefSysMsg (modm_packed) in JetsonSubsystem.hpp.
-// Booleans byte bit layout (MSB first): see README.md for the full
+// Booleans byte bit layout (MSB first): see UART_PROTOCOL.md for the full
 // bit-to-flag table (team/health/zone RFIDs/power flags).
 struct __attribute__((packed)) RefSysMsgPayload {
     uint8_t  gameStage;
