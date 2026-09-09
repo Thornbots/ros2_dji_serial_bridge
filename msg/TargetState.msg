@@ -10,5 +10,5 @@ float32[6] variance               # KF diagonal (x,y,z,vx,vy,vz)
 geometry_msgs/Point panel         # latest selected panel, for the raw fallback
 float32 spin_hz                   # 0 if unknown
 float32 spin_phase                # radians, 0 if unknown
-uint8 estimator                   # 0 = running_mean, 1 = width_refined
+uint8 estimator                   # 0 = running_mean; 1 = width_refined, deferred
 bool valid                        # false until converged; don't lead on it
