@@ -58,6 +58,70 @@ The node has no opinion on the other ends of these topics. Upstream
 producers and consumers (thornbots_pkg's mcb_relay, the CV pipeline, etc.)
 publish or subscribe directly, remapped as needed.
 
+### Jetson → MCB payloads (dji_protocol.hpp)
+
+Three of the five message types travel outbound. The node transmits only on
+receipt of a ROS message: one subscriber callback, one frame, no timer and no
+retransmission, so the wire rate is whatever `mcb_relay` publishes at. Nothing
+is clamped or validated on the way out; a NaN in the ROS message reaches the
+MCB as a NaN.
+
+Every frame is the 7-byte header, then the payload below, then CRC-16.
+Offsets are relative to the start of the payload (absolute offset = payload
+offset + 7). All fields little-endian.
+
+#### ROS_MSG (id=0) — navigation goal, 8-byte payload, 17-byte frame
+
+Subscribed on `~/nav_goal` (`geometry_msgs/msg/Point`, depth-10 reliable QoS).
+`z` is discarded.
+
+| Off | Size | Type    | Field     | From          |
+|-----|------|---------|-----------|---------------|
+| 0   | 4    | float32 | `targetX` | `Point.x`     |
+| 4   | 4    | float32 | `targetY` | `Point.y`     |
+
+Field goal in the MCB's odometry frame, metres, consumed by its autonomous
+drive controller. No publisher exists in this workspace yet: `mcb_relay`
+wires up `~/cv_target` and `~/relocalize` only, so this path is implemented
+but dormant.
+
+#### CV_MSG (id=1) — aim point, 17-byte payload, 26-byte frame
+
+Subscribed on `~/cv_target` (`dji_serial_bridge/msg/CVTarget`, SensorDataQoS,
+best-effort, so a dropped frame is expected and fine at CV rates).
+
+| Off | Size | Type    | Field        | From                  |
+|-----|------|---------|--------------|-----------------------|
+| 0   | 4    | float32 | `x`          | `CVTarget.x`          |
+| 4   | 4    | float32 | `y`          | `CVTarget.y`          |
+| 8   | 4    | float32 | `z`          | `CVTarget.z`          |
+| 12  | 4    | float32 | `confidence` | `CVTarget.confidence` |
+| 16  | 1    | uint8   | `flags`      | packed, see below     |
+
+`flags` bit0 = `lead_applied`, bit1 = `track_valid`, bits 2-7 reserved and
+sent as 0. `x/y/z` is a root-frame position in metres (REP-103: x forward,
+y left, z up) that Type-C aims at directly, applying its own gravity, drag
+and muzzle geometry. It is not a camera-frame offset and not a barrel
+attitude. `header` does not cross the wire, so the MCB has no detection
+timestamp and cannot age the point itself; staleness is the sender's problem.
+See the warning at the top of this file for the two layout changes this
+struct has been through.
+
+#### RELOCALIZE (id=4) — lidar position fix, 8-byte payload, 17-byte frame
+
+Subscribed on `~/relocalize` (`geometry_msgs/msg/Point`, depth-10 reliable
+QoS). `z` is discarded.
+
+| Off | Size | Type    | Field       | From      |
+|-----|------|---------|-------------|-----------|
+| 0   | 4    | float32 | `expectedX` | `Point.x` |
+| 4   | 4    | float32 | `expectedY` | `Point.y` |
+
+The lidar-estimated position the MCB should adopt as its odometry origin,
+same frame and units as POSE_MSG's `x/y`. Each one is destructive to MCB
+odometry, so the node logs every transmission at INFO with the last received
+`~/pose` beside the new coordinate.
+
 ### DJI UART frame layout (dji_protocol.hpp)
 
 Packed struct definitions mirror the wire layout used by the MCB
