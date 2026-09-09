@@ -1,7 +1,8 @@
 # Bounding box + depth for one detected armor panel, bundled together so
 # thornbots_pkg can reason about panel geometry instead of a bare point.
-# ROS-internal only: produced by roi_depth_query, consumed by thornbots_pkg.
-# Never transmitted over UART by dji_serial_bridge_node.
+# ROS-internal only: produced by roi_depth_query's roi_depth_node (in the
+# Realsense_ROI_Depth_Rectifier repo) and by sim's cv_target_emulator.py,
+# consumed by thornbots_pkg's target_selector.py. Never crosses the UART wire.
 std_msgs/Header header
 
 geometry_msgs/Point32[4] corners  # TL,TR,BR,BL - camera body frame (REP-103), metres

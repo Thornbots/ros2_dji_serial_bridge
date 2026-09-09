@@ -1,5 +1,5 @@
-# Referee system status forwarded from the Type-C.
-# Sent by the Type-C at ~5 Hz interleaved with POSE_MSG (REF_SYS_MSG, id=3).
+# Referee system status forwarded from the MCB at ~5 Hz, interleaved with
+# POSE_MSG (REF_SYS_MSG, id=3). header.stamp is the Jetson's arrival time.
 std_msgs/Header header
 
 uint8  game_stage               # referee game stage enum value
@@ -9,7 +9,8 @@ uint8  robot_id                 # robot ID normalised to red-team numbering (her
 float32 delta_angle_got_hit_in  # angle from current heading at which last hit arrived (radians)
 
 # Booleans unpacked from the single booleans byte.
-# Bit layout on the wire (MSB→LSB): blue|healing|reload|center|teamCenter|oppCenter|chassis|gimbal
+# Bit layout on the wire (MSB→LSB): blue|healing|reload|center|teamCenter|
+# oppCenter|chassis|gimbal -- full table in UART_PROTOCOL.md.
 bool is_on_blue_team
 bool is_healing
 bool is_in_reload_zone          # restoration or exchange zone RFID active
