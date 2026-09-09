@@ -49,8 +49,8 @@ struct __attribute__((packed)) PoseDataPayload {
     float   vel_y;       // chassis vY (m/s)
     float   head_pitch;  // gimbal pitch encoder value (radians)
     float   head_yaw;    // gimbal yaw relative to world (radians)
-    uint8_t odomStatus;  // 0 ok, 1 encoder, 2 imu, 3 slip, 4 unknown; non-zero
-                         // means x/y/vel_x/vel_y are not trustworthy
+    uint8_t odomStatus;  // odometry source: 0 pods, 1 drivetrain, 2 i2c dead
+                         // (no data), 3 i2c dead using drivetrain
 };
 static_assert(sizeof(PoseDataPayload) == 25, "PoseDataPayload size mismatch");
 
