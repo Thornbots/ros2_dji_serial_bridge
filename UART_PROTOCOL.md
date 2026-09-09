@@ -193,8 +193,30 @@ which would fire at an aim point the delay was never solved for. Merging makes
 that unrepresentable. It also spends no new message ID and keeps the "one
 CV frame per gimbal update" cadence the MCB already expects.
 
-Note `CVTarget.header` does not cross the wire, so the MCB cannot age the
-point. A delay measured from `header.stamp` therefore needs either a wire
-timestamp or a firmware-side convention (delay measured from frame receipt) —
-settle that before implementing. Same two-repos-one-change rule as every other
-wire edit; see README.md's "MCB firmware coordination".
+**Also decided: put a header on the wire.** `CVTarget.header` currently stops
+at the ROS boundary, so the MCB has no detection timestamp and cannot age the
+point — which is exactly what a fire delay needs a reference for. `CV_MSG`
+gains a timestamp field ahead of the aim fields, and the delay is measured
+from it.
+
+Sketch, not implemented:
+
+| Off | Size | Type    | Field        | Note                          |
+|-----|------|---------|--------------|-------------------------------|
+| 0   | 4    | uint32  | `stamp_ms`   | new — decision time           |
+| 4   | 4    | float32 | `x`          |                               |
+| 8   | 4    | float32 | `y`          |                               |
+| 12  | 4    | float32 | `z`          |                               |
+| 16  | 4    | float32 | `confidence` |                               |
+| 20  | 2    | uint16  | `delay_ms`   | new — from `FireCommand`      |
+| 22  | 1    | uint8   | `flags`      | bit2 = `fire`, new            |
+
+That is `CVDataPayload` 17 → 23 bytes, so it is a firmware change like any
+other. Open sub-question, since it decides whether `stamp_ms` is usable as an
+absolute time: the two clocks are not synced, so either the MCB treats
+`stamp_ms` as delta-only (staleness between consecutive frames) and runs the
+delay from frame receipt, or a clock-sync step gets added. Deltas work without
+any sync and are probably enough.
+
+Same two-repos-one-change rule as every other wire edit; see README.md's "MCB
+firmware coordination".
