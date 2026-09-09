@@ -6,8 +6,9 @@
 # camera-frame offset and not a barrel attitude -- Type-C applies its own
 # ballistics (gravity, drag, muzzle geometry) on top of this point. No
 # velocity/spin fields on the wire by design -- see UART_PROTOCOL.md.
-# PLANNED: absorb FireCommand as a fire-delay field, so one frame carries
-# "aim here, fire in N ms" -- see UART_PROTOCOL.md ("Not on the wire").
+# PLANNED: absorb FireCommand as a fire-delay field and put a stamp on the
+# wire, so one timestamped frame carries "aim here, fire in N ms" and the MCB
+# can age it -- see UART_PROTOCOL.md ("Not on the wire").
 std_msgs/Header header
 
 float32 x               # aim point position -- forward (m), root frame
