@@ -6,9 +6,30 @@ control board) with ROS 2 topics.
 **Wire formats: [`UART_PROTOCOL.md`](UART_PROTOCOL.md)** — frame layout, all
 five message IDs, byte tables both directions, REF_SYS bits, POSE_MSG odom
 status codes. Read it before touching `dji_protocol.hpp` or any `msg/` file
-that crosses the link. Changing one is a two-repo change; the MCB firmware
-carries the matching structs, and `CV_MSG` and `POSE_MSG` are both waiting on
-it right now.
+that crosses the link.
+
+## MCB firmware coordination
+
+Every payload struct here is mirrored by hand in the firmware's
+`JetsonSubsystem.hpp`, in a different repo. The MCB casts received bytes into
+its copy, so a layout the two sides disagree on is a silent break: a size
+mismatch fails the receiver's length check and the topic simply stops, and a
+field that changes meaning under a stable layout is not caught at all. Every
+wire change is two commits in two repos, landed together.
+
+Two are pending right now, so neither works on real hardware until the
+firmware structs are updated:
+
+- **`CV_MSG` (id=1)** changed twice. On 2026-07-28 `v_x/v_y/v_z` and
+  `a_x/a_y/a_z` were dropped, taking `CVDataPayload` 40 → 16 bytes and moving
+  `confidence` from offset 36 to 12. Later `x/y/z` changed meaning from a
+  camera-frame offset to a root-frame position, and the `flags` byte took the
+  struct to 17 bytes. Firmware that parses the new layout correctly still aims
+  wrong if it treats `x/y/z` as camera-relative.
+- **`POSE_MSG` (id=2)** gained a trailing `odomStatus` byte on 2026-09-09,
+  taking `PoseDataPayload` 24 → 25 bytes. Until the firmware's `PoseData`
+  matches, every pose frame fails the length check and `~/pose` publishes
+  nothing.
 
 ## Topics
 

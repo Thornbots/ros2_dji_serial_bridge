@@ -4,9 +4,8 @@ Reference for every message crossing the serial link. Jetson side:
 `include/dji_serial_bridge/dji_protocol.hpp`. MCB side: `JetsonSubsystem.hpp`
 in the firmware repo.
 
-The MCB casts these bytes into packed structs, so any change here is also a
-firmware change. Size mismatches fail the receiver's length check; a field
-that changes meaning under a stable layout does not.
+Changing anything here is also a firmware change; see README.md for the
+coordination notes and the currently pending ones.
 
 ## Framing
 
@@ -91,13 +90,6 @@ and spin are not on the wire; they are ROS-internal on `/cv/target_state`
 (`TargetState.msg`). `header` is not on the wire, so the MCB has no detection
 timestamp and cannot age the point.
 
-Layout history, both requiring matching firmware changes:
-
-- 2026-07-28: `v_x/v_y/v_z` and `a_x/a_y/a_z` dropped, 40 → 16 bytes,
-  `confidence` moved from offset 36 to 12.
-- Later: `x/y/z` changed from a camera-frame offset to a root-frame position,
-  and the `flags` byte took the struct to 17 bytes.
-
 ### RELOCALIZE (id=4) — lidar position fix
 
 8-byte payload, 17-byte frame. Subscribed on `~/relocalize`
@@ -149,10 +141,6 @@ Non-zero means `x`, `y`, `vel_x` and `vel_y` are unusable; `head_pitch` and
 `head_yaw` are gimbal encoder values and remain valid. The node copies the byte
 through without validating it against the table. Transitions are logged: WARN
 into a fault, INFO on recovery.
-
-`odomStatus` was added 2026-09-09, taking the payload from 24 to 25 bytes.
-Until the firmware's `PoseData` matches, every pose frame fails the length
-check and `~/pose` publishes nothing.
 
 ### REF_SYS_MSG (id=3) — referee system status
 

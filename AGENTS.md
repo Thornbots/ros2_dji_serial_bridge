@@ -4,7 +4,8 @@ C++ node bridging the MCB's DJI-framed UART protocol to ROS 2 topics. Every
 wire format is in `UART_PROTOCOL.md`: frame layout, all five message IDs, the
 byte tables both directions, `REF_SYS_MSG` bits, `POSE_MSG` odom status codes.
 Read it before touching any struct or any `msg/` file that crosses the link.
-`README.md` keeps the topic list, parameters and diagnostics.
+`README.md` keeps the topic list, parameters, diagnostics, and the MCB
+firmware-coordination notes, including which wire changes are pending.
 
 The ROS package name is `dji_serial_bridge`, not the directory name.
 `--packages-select ros2_dji_serial_bridge` silently selects nothing.
@@ -27,5 +28,5 @@ needs a rebuild.
   publisher here is the wrong fix.
 - Wire-format changes need firmware coordination. The MCB's matching struct
   lives outside this repo; changing a payload layout without the firmware side
-  breaks the link silently. See the pending-coordination warnings in
-  `UART_PROTOCOL.md` before editing `dji_protocol.hpp` or any payload struct.
+  breaks the link silently. Read `README.md`'s "MCB firmware coordination"
+  section before editing `dji_protocol.hpp` or any payload struct.
