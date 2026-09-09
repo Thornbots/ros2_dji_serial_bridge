@@ -566,11 +566,10 @@ private:
     {
         switch (s)
         {
-        case 0: return "ok";
-        case 1: return "encoder fault";
-        case 2: return "imu fault";
-        case 3: return "slip";
-        case 4: return "unknown";
+        case 0: return "odometry pods";
+        case 1: return "drivetrain odometry";
+        case 2: return "i2c dead, no data";
+        case 3: return "i2c dead, drivetrain odometry";
         default: return "undefined code";
         }
     }
@@ -612,13 +611,19 @@ private:
             if (raw.odomStatus == 0)
             {
                 RCLCPP_INFO(get_logger(),
-                            "odom_status: recovered (was %u) — MCB x/y trustworthy again",
-                            prev_status);
+                            "odom_status: back on odometry pods (was %u, %s)",
+                            prev_status, odom_status_name(prev_status));
+            }
+            else if (raw.odomStatus == 2)
+            {
+                RCLCPP_ERROR(get_logger(),
+                             "odom_status: 2 (%s) — MCB x/y/vel have no source",
+                             odom_status_name(raw.odomStatus));
             }
             else
             {
                 RCLCPP_WARN(get_logger(),
-                            "odom_status: %u (%s) — MCB x/y/vel not trustworthy",
+                            "odom_status: %u (%s) — MCB x/y/vel degraded by wheel slip",
                             raw.odomStatus, odom_status_name(raw.odomStatus));
             }
         }

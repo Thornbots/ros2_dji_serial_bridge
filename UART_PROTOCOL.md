@@ -127,20 +127,20 @@ clock is on the wire.
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
 | 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
 | 20  | 4    | float32 | `head_yaw`   | gimbal yaw relative to world, radians    |
-| 24  | 1    | uint8   | `odomStatus` | odometry health, table below             |
+| 24  | 1    | uint8   | `odomStatus` | which source produced x/y/vel, below     |
 
-| Code | `RobotPose` constant | Meaning                                      |
-|------|----------------------|----------------------------------------------|
-| 0    | `ODOM_OK`            | dead reckoning is trustworthy                |
-| 1    | `ODOM_ENCODER_FAULT` | wheel encoder fault or implausible reading   |
-| 2    | `ODOM_IMU_FAULT`     | IMU fault, saturation, or failed calibration |
-| 3    | `ODOM_SLIP`          | wheels turning without matching motion       |
-| 4    | `ODOM_UNKNOWN`       | MCB knows odom is bad, not why               |
+| Code | `RobotPose` constant         | Source of `x/y/vel_x/vel_y`                  |
+|------|------------------------------|----------------------------------------------|
+| 0    | `ODOM_PODS`                  | odometry pods, healthy                       |
+| 1    | `ODOM_DRIVETRAIN`            | drivetrain odometry, degraded by wheel slip  |
+| 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
+| 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
 
-Non-zero means `x`, `y`, `vel_x` and `vel_y` are unusable; `head_pitch` and
-`head_yaw` are gimbal encoder values and remain valid. The node copies the byte
-through without validating it against the table. Transitions are logged: WARN
-into a fault, INFO on recovery.
+Code 2 means the fields have no source behind them. Codes 1 and 3 mean they
+are drivetrain-derived and drift under wheel slip. `head_pitch` and `head_yaw`
+are gimbal encoder values and are unaffected. The node copies the byte through
+without validating it against the table. Transitions are logged: INFO back to
+pods, ERROR into 2, WARN into 1 or 3.
 
 ### REF_SYS_MSG (id=3) — referee system status
 

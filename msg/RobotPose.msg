@@ -10,14 +10,13 @@ float32 vel_y      # chassis Y velocity  (m/s)
 float32 head_pitch # gimbal pitch angle  (radians, encoder value)
 float32 head_yaw   # gimbal yaw angle relative to world (radians)
 
-# Odometry health, reported with every pose so the verdict always matches the
-# x/y it arrived with. Non-zero means x/y/vel_x/vel_y are not trustworthy;
-# head_pitch/head_yaw come from the gimbal encoders and stay good regardless.
+# Which source produced x/y/vel_x/vel_y, reported with every pose so the
+# answer always matches the values it arrived with. head_pitch/head_yaw are
+# gimbal encoder values and are unaffected by any of these.
 # See UART_PROTOCOL.md for the wire layout.
-uint8 ODOM_OK = 0
-uint8 ODOM_ENCODER_FAULT = 1   # wheel encoder fault or implausible reading
-uint8 ODOM_IMU_FAULT = 2       # IMU fault, saturation, or failed calibration
-uint8 ODOM_SLIP = 3            # wheels turning without matching motion
-uint8 ODOM_UNKNOWN = 4         # MCB knows odom is bad, not why
+uint8 ODOM_PODS = 0             # odometry pods healthy, best accuracy
+uint8 ODOM_DRIVETRAIN = 1       # drivetrain odometry, degraded by wheel slip
+uint8 ODOM_I2C_DEAD = 2         # I2C bus dead, no pod data, no fallback
+uint8 ODOM_I2C_DEAD_DRIVETRAIN = 3  # I2C bus dead, drivetrain odometry instead
 
 uint8 odom_status  # one of the ODOM_* constants above
