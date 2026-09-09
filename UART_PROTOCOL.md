@@ -180,3 +180,21 @@ travelling between `thornbots_pkg` and the CV pipeline.
 `mcb_relay` republishes `/sentry/fire_command` onto
 `/dji_serial_bridge/fire_command`, where nothing reads it. Putting it on the
 wire needs an ID, a payload struct and the matching firmware side.
+
+**Decided: merge `FireCommand` into `CVTarget` rather than giving it its own
+ID.** The fire decision becomes a delay field on the aim message — "aim here,
+fire this many ms from `header.stamp`" — so `CV_MSG` (id=1) carries both and
+`FireCommand` goes away.
+
+The reason is that the two are one decision. A fire delay is only meaningful
+against the aim point it was computed for, and sending them as two frames lets
+them arrive apart, be dropped independently, or pair up wrongly on the MCB —
+which would fire at an aim point the delay was never solved for. Merging makes
+that unrepresentable. It also spends no new message ID and keeps the "one
+CV frame per gimbal update" cadence the MCB already expects.
+
+Note `CVTarget.header` does not cross the wire, so the MCB cannot age the
+point. A delay measured from `header.stamp` therefore needs either a wire
+timestamp or a firmware-side convention (delay measured from frame receipt) —
+settle that before implementing. Same two-repos-one-change rule as every other
+wire edit; see README.md's "MCB firmware coordination".
