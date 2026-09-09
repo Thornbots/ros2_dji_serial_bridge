@@ -22,7 +22,11 @@ The node has no opinion on the other end of any of them. `thornbots_pkg`'s
 
 ## Parameters
 
-Defaults in `config/dji_bridge_params.yaml`.
+Defaults live in `config/dji_bridge_params.yaml`, which the launch file loads
+under the `/**` wildcard key. Only `device`, `baudrate` and `debug_log` are
+launch arguments; the other three change only in the YAML, or via a whole
+replacement file with `params_file:=`. `diag_interval_s:=0` on the command
+line is silently ignored.
 
 - `device` (string) : serial device path, e.g. `/dev/ttyTHS1`
 - `baudrate` (int) : bits per second, e.g. 115200
@@ -44,6 +48,10 @@ error counts and per-topic message counts. Read it as:
 | bytes>0, frames>0, pose>0 | healthy                                             |
 
 ## Usage
+
+The ROS package is `dji_serial_bridge`; the directory is `ros2_dji_serial_bridge`.
+`colcon build --packages-select ros2_dji_serial_bridge` selects nothing and
+succeeds.
 
 ```bash
 ros2 launch dji_serial_bridge dji_bridge.launch.py device:=/dev/ttyUSB0 baudrate:=115200
