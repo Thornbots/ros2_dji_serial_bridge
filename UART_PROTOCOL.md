@@ -33,7 +33,7 @@ retransmission, acknowledgement or flow control in either direction.
 | ID | Direction     | Payload struct      | Bytes | ROS topic     | ROS type                           | Rate         |
 |----|---------------|---------------------|-------|---------------|------------------------------------|--------------|
 | 0  | Jetson → MCB  | `ROSDataPayload`    | 8     | `~/nav_goal`  | `geometry_msgs/msg/Point`          | on publish   |
-| 1  | Jetson → MCB  | `CVDataPayload`     | 17    | `~/cv_target` | `dji_serial_bridge/msg/CVTarget`   | on publish   |
+| 1  | Jetson → MCB  | `CVDataPayload`     | 23    | `~/cv_target` | `dji_serial_bridge/msg/CVTarget`   | on publish   |
 | 2  | MCB → Jetson  | `PoseDataPayload`   | 25    | `~/pose`      | `dji_serial_bridge/msg/RobotPose`  | 100 Hz       |
 | 3  | MCB → Jetson  | `RefSysMsgPayload`  | 11    | `~/ref_sys`   | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz      |
 | 4  | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize`| `geometry_msgs/msg/Point`          | on correction|
@@ -66,29 +66,43 @@ A field goal in the MCB's odometry frame, metres, consumed by its autonomous
 drive controller. No publisher in this workspace: `mcb_relay` wires up
 `~/cv_target` and `~/relocalize` only.
 
-### CV_MSG (id=1) — aim point
+### CV_MSG (id=1) — aim point and fire decision
 
-17-byte payload, 26-byte frame. Subscribed on `~/cv_target`
+23-byte payload, 32-byte frame. Subscribed on `~/cv_target`
 (`dji_serial_bridge/msg/CVTarget`, SensorDataQoS, best-effort).
 
-| Off | Size | Type    | Field        | From                  |
-|-----|------|---------|--------------|-----------------------|
-| 0   | 4    | float32 | `x`          | `CVTarget.x`          |
-| 4   | 4    | float32 | `y`          | `CVTarget.y`          |
-| 8   | 4    | float32 | `z`          | `CVTarget.z`          |
-| 12  | 4    | float32 | `confidence` | `CVTarget.confidence` |
-| 16  | 1    | uint8   | `flags`      | packed, below         |
+| Off | Size | Type    | Field        | From                          |
+|-----|------|---------|--------------|-------------------------------|
+| 0   | 4    | uint32  | `stamp_ms`   | `CVTarget.header.stamp`, ms   |
+| 4   | 4    | float32 | `x`          | `CVTarget.x`                  |
+| 8   | 4    | float32 | `y`          | `CVTarget.y`                  |
+| 12  | 4    | float32 | `z`          | `CVTarget.z`                  |
+| 16  | 4    | float32 | `confidence` | `CVTarget.confidence`         |
+| 20  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
+| 22  | 1    | uint8   | `flags`      | packed, below                 |
 
 `flags` bit0 = `lead_applied` (`x/y/z` already includes the intercept solve),
 bit1 = `track_valid` (backed by a converged `target_tracker` estimate rather
-than a raw panel position), bits 2-7 reserved, sent as 0.
+than a raw panel position), bit2 = `fire` (`CVTarget.fire`), bits 3-7
+reserved, sent as 0.
+
+`stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
+clocks are not synced, so it is **delta-only**: the MCB compares consecutive
+frames to age the point, and runs `delay_ms` from frame receipt rather than
+from an absolute time. The 32-bit field wraps every ~49.7 days, which a
+delta reading survives.
+
+Aim and fire travel as one frame on purpose. A fire delay is only meaningful
+against the aim point it was solved for; two frames could arrive apart, drop
+independently, or pair up wrongly on the MCB and fire at a point the delay
+was never computed for. `delay_ms` = 0 with `fire` set means fire now;
+`fire` clear means `delay_ms` is meaningless.
 
 `x/y/z` is a root-frame position in metres, REP-103 (x forward, y left, z up).
 Type-C aims at it directly and applies its own gravity, drag and muzzle
 geometry. It is not a camera-frame offset and not a barrel attitude. Velocity
 and spin are not on the wire; they are ROS-internal on `/cv/target_state`
-(`TargetState.msg`). `header` is not on the wire, so the MCB has no detection
-timestamp and cannot age the point.
+(`TargetState.msg`).
 
 ### RELOCALIZE (id=4) — lidar position fix
 
@@ -176,47 +190,10 @@ The node unpacks the byte into the eight named booleans.
 `PanelDetection`, `PanelDetectionArray` and `TargetState` are ROS-internal,
 travelling between `thornbots_pkg` and the CV pipeline.
 
-`FireCommand` has no message ID and no subscriber in this package.
-`mcb_relay` republishes `/sentry/fire_command` onto
-`/dji_serial_bridge/fire_command`, where nothing reads it. Putting it on the
-wire needs an ID, a payload struct and the matching firmware side.
-
-**Decided: merge `FireCommand` into `CVTarget` rather than giving it its own
-ID.** The fire decision becomes a delay field on the aim message — "aim here,
-fire this many ms from `header.stamp`" — so `CV_MSG` (id=1) carries both and
-`FireCommand` goes away.
-
-The reason is that the two are one decision. A fire delay is only meaningful
-against the aim point it was computed for, and sending them as two frames lets
-them arrive apart, be dropped independently, or pair up wrongly on the MCB —
-which would fire at an aim point the delay was never solved for. Merging makes
-that unrepresentable. It also spends no new message ID and keeps the "one
-CV frame per gimbal update" cadence the MCB already expects.
-
-**Also decided: put a header on the wire.** `CVTarget.header` currently stops
-at the ROS boundary, so the MCB has no detection timestamp and cannot age the
-point — which is exactly what a fire delay needs a reference for. `CV_MSG`
-gains a timestamp field ahead of the aim fields, and the delay is measured
-from it.
-
-Sketch, not implemented:
-
-| Off | Size | Type    | Field        | Note                          |
-|-----|------|---------|--------------|-------------------------------|
-| 0   | 4    | uint32  | `stamp_ms`   | new — decision time           |
-| 4   | 4    | float32 | `x`          |                               |
-| 8   | 4    | float32 | `y`          |                               |
-| 12  | 4    | float32 | `z`          |                               |
-| 16  | 4    | float32 | `confidence` |                               |
-| 20  | 2    | uint16  | `delay_ms`   | new — from `FireCommand`      |
-| 22  | 1    | uint8   | `flags`      | bit2 = `fire`, new            |
-
-That is `CVDataPayload` 17 → 23 bytes, so it is a firmware change like any
-other. Open sub-question, since it decides whether `stamp_ms` is usable as an
-absolute time: the two clocks are not synced, so either the MCB treats
-`stamp_ms` as delta-only (staleness between consecutive frames) and runs the
-delay from frame receipt, or a clock-sync step gets added. Deltas work without
-any sync and are probably enough.
+`FireCommand` is gone as of 2026-09-20: it was merged into `CVTarget` as
+`fire` + `delay_ms`, and `CV_MSG` (id=1) grew `stamp_ms` so the delay has a
+reference the MCB can age. `CVDataPayload` went 17 → 23 bytes; the layout and
+the delta-only reading of `stamp_ms` are in the CV_MSG section above.
 
 Same two-repos-one-change rule as every other wire edit; see README.md's "MCB
 firmware coordination".

@@ -17,7 +17,6 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotPose.msg"
   "msg/RefSysStatus.msg"
   "msg/CVTarget.msg"
-  "msg/FireCommand.msg"
   "msg/PanelDetection.msg"
   "msg/PanelDetectionArray.msg"
   "msg/TargetState.msg"
