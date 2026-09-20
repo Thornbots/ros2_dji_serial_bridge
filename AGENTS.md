@@ -30,3 +30,10 @@ needs a rebuild.
   lives outside this repo; changing a payload layout without the firmware side
   breaks the link silently. Read `README.md`'s "MCB firmware coordination"
   section before editing `dji_protocol.hpp` or any payload struct.
+
+## Committing
+
+This package is a submodule of `thornbots_workspace`, on branch `main`. Commit
+and push here first, then bump this gitlink in `../` — one logical change, one
+bump, never a gitlink pointing at an unpushed commit. Full rule in
+`../CLAUDE.md` § Packages.
