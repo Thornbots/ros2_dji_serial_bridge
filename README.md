@@ -17,7 +17,7 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
-Two are pending right now, so neither works on real hardware until the
+Three are pending right now, so none works on real hardware until the
 firmware structs are updated:
 
 - **`CV_MSG` (id=1)** changed twice. On 2026-07-28 `v_x/v_y/v_z` and
@@ -26,19 +26,17 @@ firmware structs are updated:
   camera-frame offset to a root-frame position, and the `flags` byte took the
   struct to 17 bytes. Firmware that parses the new layout correctly still aims
   wrong if it treats `x/y/z` as camera-relative.
+- **`CV_MSG` (id=1) again**, on 2026-09-20: it absorbed `FireCommand` and
+  gained a stamp, so one frame now carries "aim here, fire this many ms from
+  this timestamp". `CVDataPayload` is 23 bytes — a leading `uint32 stamp_ms`,
+  then the aim fields, then `uint16 delay_ms` and the `flags` byte, whose new
+  bit2 is `fire`. Every offset after byte 0 moved. `stamp_ms` is delta-only:
+  the clocks are not synced, so the MCB ages the point by comparing
+  consecutive frames and runs the delay from frame receipt.
 - **`POSE_MSG` (id=2)** gained a trailing `odomStatus` byte on 2026-09-09,
   taking `PoseDataPayload` 24 → 25 bytes. Until the firmware's `PoseData`
   matches, every pose frame fails the length check and `~/pose` publishes
   nothing.
-
-A third is decided but not implemented: **`CV_MSG` (id=1) should absorb
-`FireCommand` as a fire-delay field, and gain a `stamp_ms` header**, so aim
-and fire cross as one timestamped frame instead of the fire decision having
-its own ID and the MCB having no way to age the point. Sketched at 17 → 23
-bytes, so it is a firmware change like any other. `UART_PROTOCOL.md`'s "Not
-on the wire" section has the reasoning, the byte layout, and the one
-remaining sub-question (whether `stamp_ms` is delta-only or the clocks get
-synced).
 
 ## Topics
 
