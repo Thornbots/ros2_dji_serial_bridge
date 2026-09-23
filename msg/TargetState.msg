@@ -2,7 +2,8 @@
 # ROS-internal only -- never crosses the UART wire (see CVTarget.msg for
 # the lean wire-format counterpart). Frame: odom (see target_tracker.py).
 # Armor model: panel k sits at centre + radius_k * (cos(yaw + k*pi/2),
-# sin(yaw + k*pi/2), 0), with radius_k = radius for even k, other_radius odd.
+# sin(yaw + k*pi/2), 0) + (0, 0, z_offset_k), with radius_k/z_offset_k =
+# radius/z_offset for even k, other_radius/other_z_offset for odd k.
 std_msgs/Header header            # stamp = detection stamp; frame_id = odom
 
 uint32 robot_track_id             # changes on robot switch, never plate handoff
@@ -15,4 +16,6 @@ float32 yaw_rate                  # spin rate, rad/s, + = counter-clockwise from
 float32 yaw_rate_variance         # EKF variance of yaw_rate
 float32 radius                    # centre to tracked panel, m
 float32 other_radius              # centre to the other panel pair, m
+float32 z_offset                  # tracked pair's height above centre.z, m
+float32 other_z_offset            # the other pair's height above centre.z, m
 bool valid                        # false until converged; don't lead on it
