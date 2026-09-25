@@ -1,21 +1,20 @@
 # Tracked-target state published by thornbots_pkg's target_tracker.py.
 # ROS-internal only -- never crosses the UART wire (see CVTarget.msg for
 # the lean wire-format counterpart). Frame: odom (see target_tracker.py).
-# Armor model: panel k sits at centre + radius_k * (cos(yaw + k*pi/2),
-# sin(yaw + k*pi/2), 0) + (0, 0, z_offset_k), with radius_k/z_offset_k =
-# radius/z_offset for even k, other_radius/other_z_offset for odd k.
-std_msgs/Header header            # stamp = detection stamp; frame_id = odom
+# Armor model: panel k sits at center + radius[k % 2] * (cos(yaw + k*pi/2),
+# sin(yaw + k*pi/2), 0) + (0, 0, z_offset[k % 2]). Pair [0] is the tracked
+# panel's (k = 0, 2), pair [1] the other (k = 1, 3).
+std_msgs/Header header            # stamp = the time this state describes (its publish time); frame_id = odom
 
 uint32 robot_track_id             # changes on robot switch, never plate handoff
-geometry_msgs/Point centre        # chassis centre, m
-geometry_msgs/Vector3 velocity    # chassis centre velocity, m/s
+float32 confidence                # detector confidence of the tracked panel, 0-1
+geometry_msgs/Point center        # chassis center, m
+geometry_msgs/Vector3 velocity    # chassis center velocity, m/s
 float32[6] variance               # EKF diagonal (x,y,z,vx,vy,vz)
-geometry_msgs/Point panel         # latest selected panel, for the raw fallback
+geometry_msgs/Point panel         # tracked panel's latest measured position, for the !valid fallback
 float32 yaw                       # tracked panel's outward-normal yaw, rad (unwrapped)
 float32 yaw_rate                  # spin rate, rad/s, + = counter-clockwise from above
 float32 yaw_rate_variance         # EKF variance of yaw_rate
-float32 radius                    # centre to tracked panel, m
-float32 other_radius              # centre to the other panel pair, m
-float32 z_offset                  # tracked pair's height above centre.z, m
-float32 other_z_offset            # the other pair's height above centre.z, m
-bool valid                        # false until converged; don't lead on it
+float32[2] radius                 # center to panel, m, per pair
+float32[2] z_offset               # panel height above center.z, m, per pair
+bool valid                        # false until converged: aim at panel, don't lead or fire
