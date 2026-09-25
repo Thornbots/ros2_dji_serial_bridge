@@ -10,6 +10,7 @@ uint32 robot_track_id             # changes on robot switch, never plate handoff
 float32 confidence                # detector confidence of the tracked panel, 0-1
 geometry_msgs/Point center        # chassis center, m
 geometry_msgs/Vector3 velocity    # chassis center velocity, m/s
+geometry_msgs/Vector3 acceleration  # chassis center acceleration, m/s^2
 float32[6] variance               # EKF diagonal (x,y,z,vx,vy,vz)
 geometry_msgs/Point panel         # tracked panel's latest measured position, for the !valid fallback
 float32 yaw                       # tracked panel's outward-normal yaw, rad (unwrapped)
