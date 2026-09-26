@@ -45,9 +45,9 @@ ament_target_dependencies(dji_serial_bridge_node
 )
 
 # Link the generated message type-support to the executable.
-rosidl_target_interfaces(dji_serial_bridge_node
-  ${PROJECT_NAME} "rosidl_typesupport_cpp"
-)
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(dji_serial_bridge_node "${cpp_typesupport_target}")
 
 # ── Install ────────────────────────────────────────────────────────────────────
 install(TARGETS dji_serial_bridge_node
