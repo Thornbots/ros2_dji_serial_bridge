@@ -37,8 +37,7 @@ firmware structs are updated:
   world-frame position in `odom`, POSE_MSG's frame, not `root`. The bytes
   and the 23-byte layout are unchanged, so nothing fails a length check:
   firmware that still treats `x/y/z` as root-relative aims wrong the moment
-  the chassis leaves the odom origin or turns. `thornbots_pkg`'s
-  `point_to_cv_target.py` still publishes `root` until it follows.
+  the chassis leaves the odom origin or turns.
 - **`POSE_MSG` (id=2)** gained a trailing `odomStatus` byte on 2026-09-09,
   taking `PoseDataPayload` 24 → 25 bytes. Until the firmware's `PoseData`
   matches, every pose frame fails the length check and `~/pose` publishes
