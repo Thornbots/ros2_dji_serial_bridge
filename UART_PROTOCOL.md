@@ -98,9 +98,11 @@ independently, or pair up wrongly on the MCB and fire at a point the delay
 was never computed for. `delay_ms` = 0 with `fire` set means fire now;
 `fire` clear means `delay_ms` is meaningless.
 
-`x/y/z` is a root-frame position in metres, REP-103 (x forward, y left, z up).
-Type-C aims at it directly and applies its own gravity, drag and muzzle
-geometry. It is not a camera-frame offset and not a barrel attitude. Velocity
+`x/y/z` is a world-frame position in metres: `odom` (REP-105, z up), the
+frame POSE_MSG's `x/y` are in. The MCB holds the point with its IMU and
+odometry while the chassis moves and turns, then aims at it and applies its
+own gravity, drag and muzzle geometry. It is not a root- or camera-frame
+offset and not a barrel attitude. Velocity
 and spin are not on the wire; they are ROS-internal on `/cv/target_state`
 (`TargetState.msg`).
 

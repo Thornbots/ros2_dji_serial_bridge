@@ -17,7 +17,7 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
-Three are pending right now, so none works on real hardware until the
+Four are pending right now, so none works on real hardware until the
 firmware structs are updated:
 
 - **`CV_MSG` (id=1)** changed twice. On 2026-07-28 `v_x/v_y/v_z` and
@@ -33,6 +33,12 @@ firmware structs are updated:
   bit2 is `fire`. Every offset after byte 0 moved. `stamp_ms` is delta-only:
   the clocks are not synced, so the MCB ages the point by comparing
   consecutive frames and runs the delay from frame receipt.
+- **`CV_MSG` (id=1) a third time**, on 2026-09-27: `x/y/z` is now a
+  world-frame position in `odom`, POSE_MSG's frame, not `root`. The bytes
+  and the 23-byte layout are unchanged, so nothing fails a length check:
+  firmware that still treats `x/y/z` as root-relative aims wrong the moment
+  the chassis leaves the odom origin or turns. `thornbots_pkg`'s
+  `point_to_cv_target.py` still publishes `root` until it follows.
 - **`POSE_MSG` (id=2)** gained a trailing `odomStatus` byte on 2026-09-09,
   taking `PoseDataPayload` 24 → 25 bytes. Until the firmware's `PoseData`
   matches, every pose frame fails the length check and `~/pose` publishes
