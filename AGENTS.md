@@ -31,6 +31,13 @@ needs a rebuild.
   breaks the link silently. Read `README.md`'s "MCB firmware coordination"
   section before editing `dji_protocol.hpp` or any payload struct.
 
+## Open
+
+- **`CV_MSG`'s `x/y/z` frame is documented, not settled.** The docs say
+  `odom`, POSE_MSG's frame, but the Jetson's `odom` is the localization
+  EKF's and RELOCALIZE moves the MCB's origin. `../CV_SPLIT_PLAN.md` W.3's
+  open issues.
+
 ## Committing
 
 This package is a submodule of `thornbots_workspace`, on branch `main`. Commit
