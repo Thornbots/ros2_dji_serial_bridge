@@ -32,11 +32,11 @@ retransmission, acknowledgement or flow control in either direction.
 
 | ID | Direction     | Payload struct      | Bytes | ROS topic     | ROS type                           | Rate         |
 |----|---------------|---------------------|-------|---------------|------------------------------------|--------------|
-| 0  | Jetson → MCB  | `ROSDataPayload`    | 8     | `~/nav_goal`  | `geometry_msgs/msg/Point`          | on publish   |
+| 0  | Jetson → MCB  | `ROSDataPayload`    | 8     | `~/nav_goal`  | `geometry_msgs/msg/PointStamped`   | on publish   |
 | 1  | Jetson → MCB  | `CVDataPayload`     | 23    | `~/cv_target` | `dji_serial_bridge/msg/CVTarget`   | on publish   |
 | 2  | MCB → Jetson  | `PoseDataPayload`   | 25    | `~/pose`      | `dji_serial_bridge/msg/RobotPose`  | 100 Hz       |
 | 3  | MCB → Jetson  | `RefSysMsgPayload`  | 11    | `~/ref_sys`   | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz      |
-| 4  | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize`| `geometry_msgs/msg/Point`          | on correction|
+| 4  | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize`| `geometry_msgs/msg/PointStamped`   | on correction|
 
 IDs match `enum UartMessage` in the firmware's `JetsonSubsystem.hpp`. Topics
 are in the node's private namespace: `~/nav_goal` is
@@ -55,12 +55,13 @@ copied without clamping or validation.
 ### ROS_MSG (id=0) — navigation goal
 
 8-byte payload, 17-byte frame. Subscribed on `~/nav_goal`
-(`geometry_msgs/msg/Point`, depth-10 reliable). `Point.z` is discarded.
+(`geometry_msgs/msg/PointStamped`, depth-10 reliable). `point.z` and the
+header are discarded.
 
 | Off | Size | Type    | Field     | From      |
 |-----|------|---------|-----------|-----------|
-| 0   | 4    | float32 | `targetX` | `Point.x` |
-| 4   | 4    | float32 | `targetY` | `Point.y` |
+| 0   | 4    | float32 | `targetX` | `point.x` |
+| 4   | 4    | float32 | `targetY` | `point.y` |
 
 A field goal in the MCB's odometry frame, metres, consumed by its autonomous
 drive controller. No publisher in this workspace: `mcb_relay` wires up
@@ -109,12 +110,13 @@ and spin are not on the wire; they are ROS-internal on `/cv/target_state`
 ### RELOCALIZE (id=4) — lidar position fix
 
 8-byte payload, 17-byte frame. Subscribed on `~/relocalize`
-(`geometry_msgs/msg/Point`, depth-10 reliable). `Point.z` is discarded.
+(`geometry_msgs/msg/PointStamped`, depth-10 reliable). `point.z` and the
+header are discarded.
 
 | Off | Size | Type    | Field       | From      |
 |-----|------|---------|-------------|-----------|
-| 0   | 4    | float32 | `expectedX` | `Point.x` |
-| 4   | 4    | float32 | `expectedY` | `Point.y` |
+| 0   | 4    | float32 | `expectedX` | `point.x` |
+| 4   | 4    | float32 | `expectedY` | `point.y` |
 
 The lidar-estimated position the MCB adopts as its odometry origin, same frame
 and units as POSE_MSG's `x/y`. It overwrites MCB odometry. The node logs every

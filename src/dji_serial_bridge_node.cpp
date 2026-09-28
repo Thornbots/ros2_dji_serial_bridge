@@ -22,7 +22,7 @@
 #include <sys/stat.h>
 
 #include <rclcpp/rclcpp.hpp>
-#include <geometry_msgs/msg/point.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
@@ -157,7 +157,7 @@ public:
         // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
         using std::placeholders::_1;
 
-        nav_goal_sub_ = create_subscription<geometry_msgs::msg::Point>(
+        nav_goal_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
             "~/nav_goal", 10,
             std::bind(&DjiSerialBridge::nav_goal_callback, this, _1));
 
@@ -165,7 +165,7 @@ public:
             "~/cv_target", rclcpp::SensorDataQoS(),
             std::bind(&DjiSerialBridge::cv_target_callback, this, _1));
 
-        relocalize_sub_ = create_subscription<geometry_msgs::msg::Point>(
+        relocalize_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
             "~/relocalize", 10,
             std::bind(&DjiSerialBridge::relocalize_callback, this, _1));
 
@@ -705,11 +705,12 @@ private:
     // Subscriber callbacks  (Jetson → MCB)
     // ═══════════════════════════════════════════════════════════════════════
 
-    void nav_goal_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+    // The wire carries no stamp, so the header stops here.
+    void nav_goal_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
     {
         ROSDataPayload p{};
-        p.targetX = static_cast<float>(msg->x);
-        p.targetY = static_cast<float>(msg->y);
+        p.targetX = static_cast<float>(msg->point.x);
+        p.targetY = static_cast<float>(msg->point.y);
 
         const bool ok = send_frame(McbMsgType::ROS_MSG,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
@@ -754,11 +755,11 @@ private:
         }
     }
 
-    void relocalize_callback(const geometry_msgs::msg::Point::SharedPtr msg)
+    void relocalize_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
     {
         RelocalizePayload p{};
-        p.expectedX = static_cast<float>(msg->x);
-        p.expectedY = static_cast<float>(msg->y);
+        p.expectedX = static_cast<float>(msg->point.x);
+        p.expectedY = static_cast<float>(msg->point.y);
 
         const bool ok = send_frame(McbMsgType::RELOCALIZE,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
@@ -774,12 +775,12 @@ private:
                             count,
                             last_pose_x_.load(std::memory_order_relaxed),
                             last_pose_y_.load(std::memory_order_relaxed),
-                            msg->x, msg->y);
+                            msg->point.x, msg->point.y);
             } else {
                 RCLCPP_INFO(get_logger(),
                             "[relocalize TX #%lu] previous MCB pose: N/A "
                             "(no ~/pose received yet)  ->  new relocalized: x=%.3f y=%.3f",
-                            count, msg->x, msg->y);
+                            count, msg->point.x, msg->point.y);
             }
         }
         else
@@ -806,9 +807,9 @@ private:
     rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr pose_pub_;
     rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
 
-    rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr nav_goal_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
     rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
-    rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr relocalize_sub_;
+    rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr relocalize_sub_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
