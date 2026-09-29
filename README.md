@@ -17,7 +17,7 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
-Four are pending right now, so none works on real hardware until the
+Three are pending right now, so none works on real hardware until the
 firmware structs are updated:
 
 - **`CV_MSG` (id=1)** changed twice. On 2026-07-28 `v_x/v_y/v_z` and
@@ -38,10 +38,6 @@ firmware structs are updated:
   and the 23-byte layout are unchanged, so nothing fails a length check:
   firmware that still treats `x/y/z` as root-relative aims wrong the moment
   the chassis leaves the odom origin or turns.
-- **`POSE_MSG` (id=2)** gained a trailing `odomStatus` byte on 2026-09-09,
-  taking `PoseDataPayload` 24 → 25 bytes. Until the firmware's `PoseData`
-  matches, every pose frame fails the length check and `~/pose` publishes
-  nothing.
 
 ## Topics
 
