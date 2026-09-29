@@ -26,6 +26,7 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cerrno>
 #include <cinttypes>
@@ -108,6 +109,8 @@ public:
 
     const auto device = get_parameter("device").as_string();
     const auto baudrate = get_parameter("baudrate").as_int();
+    // 8N1: 10 bits on the wire per byte.
+    byte_wire_ns_ = 10 * 1000000000LL / std::max<int64_t>(baudrate, 1);
     const auto poll_ms = static_cast<int>(get_parameter("read_poll_ms").as_int());
     enforce_crc_ = get_parameter("enforce_crc").as_bool();
     debug_log_ = get_parameter("debug_log").as_bool();
@@ -247,6 +250,8 @@ private:
   // Consecutive poll() calls that returned 0 (no data).
   // Resets to 0 the moment any byte arrives.
   std::atomic<uint64_t> silent_polls_{0};
+  // Wire time of one byte at the configured baud; see frame_stamp().
+  int64_t byte_wire_ns_{0};
 
   void print_diagnostics()
   {
@@ -391,6 +396,8 @@ private:
 
     std::vector<uint8_t> rx_buf;
     rx_buf.reserve(512);
+    std::vector<int64_t> rx_read_ns;  // read time of each byte in rx_buf
+    rx_read_ns.reserve(512);
     uint8_t chunk[256];
 
     // We log a "still no data" warning after this many consecutive silent polls.
@@ -439,6 +446,7 @@ private:
           }
           silent_polls_.store(0, std::memory_order_relaxed);
           rx_buf.insert(rx_buf.end(), chunk, chunk + n);
+          rx_read_ns.insert(rx_read_ns.end(), static_cast<size_t>(n), now().nanoseconds());
         } else if (n < 0 && errno != EAGAIN) {
           RCLCPP_ERROR(get_logger(), "read() error: %s", strerror(errno));
           break;
@@ -453,7 +461,7 @@ private:
         break;
       }
 
-      process_rx_buffer(rx_buf);
+      process_rx_buffer(rx_buf, rx_read_ns);
     }
 
     RCLCPP_INFO(get_logger(),
@@ -462,9 +470,14 @@ private:
   }
 
   // Scan rx_buf for complete, CRC-validated DJI frames and dispatch them.
-  void process_rx_buffer(std::vector<uint8_t> & buf)
+  // read_ns runs parallel to buf: when each byte was read.
+  void process_rx_buffer(std::vector<uint8_t> & buf, std::vector<int64_t> & read_ns)
   {
     static constexpr size_t MIN_FRAME = sizeof(FrameHeader) + 2u;
+    auto drop = [&](size_t n) {
+        buf.erase(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(n));
+        read_ns.erase(read_ns.begin(), read_ns.begin() + static_cast<std::ptrdiff_t>(n));
+      };
 
     while (buf.size() >= MIN_FRAME) {
       // ── 1. Hunt for frame head ──────────────────────────────────────
@@ -472,7 +485,7 @@ private:
         RCLCPP_DEBUG(get_logger(),
                              "process_rx_buffer: skipping byte 0x%02x (not FRAME_HEAD 0xA5)",
                              buf[0]);
-        buf.erase(buf.begin());
+        drop(1);
         continue;
       }
 
@@ -486,7 +499,7 @@ private:
         RCLCPP_WARN(get_logger(),
                             "CRC8 mismatch (seq=%u, got=0x%02x expected=0x%02x) — dropping byte",
                             hdr.seq, hdr.crc8, expected_crc8);
-        buf.erase(buf.begin());
+        drop(1);
         continue;
       }
 
@@ -511,7 +524,7 @@ private:
                             "CRC16 mismatch (seq=%u, msgType=%u, dataLen=%u, "
                             "got=0x%04x expected=0x%04x) — dropping byte",
                             hdr.seq, hdr.msgType, hdr.dataLength, recv_crc16, calc_crc16);
-        buf.erase(buf.begin());
+        drop(1);
         continue;
       }
 
@@ -521,21 +534,33 @@ private:
                          "process_rx_buffer: valid frame  seq=%u  msgType=%u  dataLen=%u",
                          hdr.seq, hdr.msgType, hdr.dataLength);
       frames_rx_.fetch_add(1, std::memory_order_relaxed);
-      dispatch_incoming(hdr.msgType, payload, hdr.dataLength);
+      dispatch_incoming(hdr.msgType, payload, hdr.dataLength,
+                        frame_stamp(read_ns[total_len - 1], total_len));
 
       // ── 6. Consume the frame ────────────────────────────────────────
-      buf.erase(buf.begin(), buf.begin() + static_cast<std::ptrdiff_t>(total_len));
+      drop(total_len);
     }
   }
 
-  void dispatch_incoming(uint16_t msg_type, const uint8_t *payload, uint16_t len)
+  // When the MCB started sending a frame: the read time of its last byte,
+  // less the whole frame's wire time. USB-serial latency is not taken off
+  // (unmeasured; thornbots_pkg/AGENTS.md).
+  rclcpp::Time frame_stamp(int64_t last_byte_read_ns, size_t frame_len) const
+  {
+    return rclcpp::Time(
+      last_byte_read_ns - static_cast<int64_t>(frame_len) * byte_wire_ns_,
+      get_clock()->get_clock_type());
+  }
+
+  void dispatch_incoming(
+    uint16_t msg_type, const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
     switch (static_cast<McbMsgType>(msg_type)) {
       case McbMsgType::POSE_MSG:
-        handle_pose(payload, len);
+        handle_pose(payload, len, stamp);
         break;
       case McbMsgType::REF_SYS:
-        handle_ref_sys(payload, len);
+        handle_ref_sys(payload, len, stamp);
         break;
       default:
         RCLCPP_WARN(get_logger(),
@@ -560,7 +585,7 @@ private:
     }
   }
 
-  void handle_pose(const uint8_t *payload, uint16_t len)
+  void handle_pose(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
     if (len != sizeof(PoseDataPayload)) {
       RCLCPP_WARN(get_logger(),
@@ -579,7 +604,7 @@ private:
     have_pose_.store(true, std::memory_order_relaxed);
 
     auto msg = dji_serial_bridge::msg::RobotPose{};
-    msg.header.stamp = now();
+    msg.header.stamp = stamp;
     msg.x = raw.x;
     msg.y = raw.y;
     msg.vel_x = raw.vel_x;
@@ -625,7 +650,7 @@ private:
     pose_pub_->publish(msg);
   }
 
-  void handle_ref_sys(const uint8_t *payload, uint16_t len)
+  void handle_ref_sys(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
     if (len != sizeof(RefSysMsgPayload)) {
       RCLCPP_WARN(get_logger(),
@@ -638,7 +663,7 @@ private:
     std::memcpy(&raw, payload, sizeof(raw));
 
     auto msg = dji_serial_bridge::msg::RefSysStatus{};
-    msg.header.stamp = now();
+    msg.header.stamp = stamp;
     msg.game_stage = raw.gameStage;
     msg.stage_time_remaining = raw.stageTimeRemaining;
     msg.robot_hp = raw.robotHp;

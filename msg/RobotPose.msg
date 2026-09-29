@@ -1,6 +1,8 @@
 # Pose and velocity of the robot chassis plus gimbal angles.
-# Sent by the MCB at 100 Hz (POSE_MSG, id=2). header.stamp is the Jetson's
-# arrival time, not an MCB clock; no MCB timestamp crosses the wire.
+# Sent by the MCB at 100 Hz (POSE_MSG, id=2). header.stamp is when the MCB
+# started sending the frame: its last byte's read time less the frame's wire
+# time at the baud. No MCB clock crosses the wire, and USB latency isn't
+# taken off.
 std_msgs/Header header
 
 float32 x          # chassis X position  (odometry, metres)
