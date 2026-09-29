@@ -46,6 +46,14 @@
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
 
+#ifdef __APPLE__
+// macOS's termios.h stops at B230400, and its speed_t is the rate itself.
+#define B460800 460800
+#define B921600 921600
+#define B2000000 2000000
+#define B4000000 4000000
+#endif
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: map an integer baud rate to a POSIX speed_t constant
 // ─────────────────────────────────────────────────────────────────────────────
