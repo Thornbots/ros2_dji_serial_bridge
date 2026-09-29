@@ -160,6 +160,23 @@ are gimbal encoder values and are unaffected. The node copies the byte through
 without validating it against the table. Transitions are logged: INFO back to
 pods, ERROR into 2, WARN into 1 or 3.
 
+### Proposed: POSE_MSG chassis yaw
+
+Not applied: the bytes above are what both sides send today. `RobotPose`
+already has `chassis_yaw` and `chassis_yaw_rate`, published as 0. Proposed
+2026-09-29 for `CV_SPLIT_PLAN.md` W.1, to agree with the firmware side:
+
+| Off | Size | Type    | Field              | Meaning                                    |
+|-----|------|---------|--------------------|--------------------------------------------|
+| 25  | 4    | float32 | `chassis_yaw`      | chassis heading, world, same sense and zero as `head_yaw`, radians |
+| 29  | 4    | float32 | `chassis_yaw_rate` | its rate, rad/s                            |
+
+33-byte payload. At `MCBV3@708b8d6` the firmware already has the heading as
+`getYawAngleRelativeWorld() - getYawEncoderValue()` (the negative of
+`AutoDriveCommand`'s `referenceAngle`), and the rate as the turret IMU's yaw
+rate less the yaw motor's. `thornbots_pkg` turns it into the `chassis_yaw`
+joint only: `root` stays heading-fixed, so localization doesn't read it.
+
 ### REF_SYS_MSG (id=3) — referee system status
 
 11-byte payload, 20-byte frame, ~5 Hz, interleaved with POSE_MSG. Published on
