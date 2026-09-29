@@ -586,6 +586,7 @@ private:
     msg.vel_y = raw.vel_y;
     msg.head_pitch = raw.head_pitch;
     msg.head_yaw = raw.head_yaw;
+    // chassis_yaw/_rate stay 0 until POSE_MSG carries them (UART_PROTOCOL.md).
     msg.odom_status = raw.odomStatus;
 
     // Pose arrives at 100 Hz, so log the status byte only when it moves.

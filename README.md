@@ -39,6 +39,10 @@ firmware structs are updated:
   firmware that still treats `x/y/z` as root-relative aims wrong the moment
   the chassis leaves the odom origin or turns.
 
+Proposed, not applied: **`POSE_MSG` (id=2) chassis yaw** (2026-09-29), two
+trailing floats taking it 25 → 33 bytes, in `UART_PROTOCOL.md`. Until both
+sides agree, `RobotPose.chassis_yaw` and `chassis_yaw_rate` read 0.
+
 ## Topics
 
 Five, one per message ID: `~/nav_goal`, `~/cv_target`, `~/pose`, `~/ref_sys`,

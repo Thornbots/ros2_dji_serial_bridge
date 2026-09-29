@@ -10,6 +10,12 @@ float32 vel_y      # chassis Y velocity  (m/s)
 float32 head_pitch # gimbal pitch angle  (radians, encoder value)
 float32 head_yaw   # gimbal yaw angle relative to world (radians)
 
+# Chassis heading in the world, same sense and zero as head_yaw (thornbots_pkg's
+# URDF turns both joints about -z). Not on the wire yet: 0 until the firmware
+# sends them (UART_PROTOCOL.md "Proposed: POSE_MSG chassis yaw").
+float32 chassis_yaw       # radians
+float32 chassis_yaw_rate  # rad/s
+
 # Which source produced x/y/vel_x/vel_y, reported with every pose so the
 # answer always matches the values it arrived with. head_pitch/head_yaw are
 # gimbal encoder values and are unaffected by any of these.
