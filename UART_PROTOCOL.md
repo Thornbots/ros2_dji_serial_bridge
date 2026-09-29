@@ -129,8 +129,10 @@ transmission at INFO with the last received `~/pose` beside the new coordinate.
 A dedicated read thread polls the port, scans for `0xA5`, checks CRC-8 over the
 header and CRC-16 over the frame (both dropped on mismatch while `enforce_crc`
 is true), then checks payload length against the struct size before publishing.
-`header.stamp` on both published messages is the Jetson's arrival time; no MCB
-clock is on the wire.
+`header.stamp` on both published messages is when the MCB started sending the
+frame: the read time of its last byte less the frame's wire time at `baudrate`
+(10 bits per byte). No MCB clock is on the wire, and the USB-serial latency
+before a read is not taken off.
 
 ### POSE_MSG (id=2) — chassis pose and gimbal angles
 

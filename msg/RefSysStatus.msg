@@ -1,5 +1,6 @@
 # Referee system status forwarded from the MCB at ~5 Hz, interleaved with
-# POSE_MSG (REF_SYS_MSG, id=3). header.stamp is the Jetson's arrival time.
+# POSE_MSG (REF_SYS_MSG, id=3). header.stamp is when the MCB started
+# sending the frame, as in RobotPose.
 std_msgs/Header header
 
 uint8  game_stage               # referee game stage enum value
