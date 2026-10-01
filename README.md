@@ -17,27 +17,55 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
-Three are pending right now, so none works on real hardware until the
-firmware structs are updated:
+### Where the firmware stands
 
-- **`CV_MSG` (id=1)** changed twice. On 2026-07-28 `v_x/v_y/v_z` and
-  `a_x/a_y/a_z` were dropped, taking `CVDataPayload` 40 → 16 bytes and moving
-  `confidence` from offset 36 to 12. Later `x/y/z` changed meaning from a
-  camera-frame offset to a root-frame position, and the `flags` byte took the
-  struct to 17 bytes. Firmware that parses the new layout correctly still aims
-  wrong if it treats `x/y/z` as camera-relative.
-- **`CV_MSG` (id=1) again**, on 2026-09-20: it absorbed `FireCommand` and
-  gained a stamp, so one frame now carries "aim here, fire this many ms from
-  this timestamp". `CVDataPayload` is 23 bytes — a leading `uint32 stamp_ms`,
-  then the aim fields, then `uint16 delay_ms` and the `flags` byte, whose new
-  bit2 is `fire`. Every offset after byte 0 moved. `stamp_ms` is delta-only:
-  the clocks are not synced, so the MCB ages the point by comparing
-  consecutive frames and runs the delay from frame receipt.
-- **`CV_MSG` (id=1) a third time**, on 2026-09-27: `x/y/z` is now a
-  world-frame position in `odom`, POSE_MSG's frame, not `root`. The bytes
-  and the 23-byte layout are unchanged, so nothing fails a length check:
-  firmware that still treats `x/y/z` as root-relative aims wrong the moment
-  the chassis leaves the odom origin or turns.
+Checked against `Thornbots/MCBV3` at `708b8d6` (newMain's head on
+2026-09-30; branch `HitTarget-HitRing-Separation-Fixed2` is newer but only
+moves the hit ring's source) by `sim`'s MCB emulator, which ports
+it and runs it against this node on a pty (`../sim/README.md` "MCB
+emulator"). Paths are under `MCB-project/src/`. Each line is a firmware-side
+fix before the match test's E2 can score:
+
+1. **`CV_MSG` is refused.** `CVData` is 40 bytes (x, y, z, v, a,
+   confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 23, and
+   `getMsg` drops any size mismatch (`JetsonSubsystem.hpp:204`). The gimbal
+   never sees a target.
+2. **`x/y/z` is a camera-frame point there**: x right, y up, z forward, plus
+   the camera offsets, turned to the world by its own IMU yaw and pitch
+   (`JetsonSubsystem.cpp:186-233`, offsets `JetsonSubsystemConstants.hpp:44-46`).
+   We send an `odom` point.
+3. **No `stamp_ms`, `delay_ms`, `flags` or `fire`.** It fires by its own
+   rule: from the first frame within 60 deg of the gun (`JetsonSubsystem.cpp:268`)
+   at indexer rate 10 (`AutoAimAndFireCommand.cpp:112`) until it patrols.
+4. **It leads the target itself**, ballistics at 24 m/s on its own velocity
+   estimate (`JetsonSubsystem.cpp:236-242`, `JetsonSubsystemConstants.hpp:49`).
+   With `lead_applied` points it would lead twice.
+5. **`RELOCALIZE` is refused**: `Relocalize` is 12 bytes, with an `expectedZ`
+   (`JetsonSubsystem.hpp:53-58`); ours 8. Accepted, it would still not
+   overwrite odometry (`JetsonSubsystem.cpp:119` is commented out):
+   `SimpleAutoDriveCommand` applies it only at full HP in a resupply zone,
+   offset by ±0.688, -0.05 m (`subsystems/drivetrain/SimpleAutoDriveCommand.hpp:91-95`).
+6. **`POSE_MSG` is 90 Hz and `REF_SYS_MSG` 10 Hz**, not 100 and 5: nine
+   poses then one ref on one 10 ms timer (`JetsonSubsystem.cpp:41-80`); the
+   200 ms ref timer (`JetsonSubsystem.hpp:141-142`) is unused.
+7. **`POSE_MSG` x/y is x right, y forward** of the heading at power-on
+   (`SimpleAutoDriveCommand.hpp:188-189`, `DrivetrainDriveCommand.cpp:40-41`),
+   not REP-105's x forward, y left. `pose_translator` reads it as REP-105.
+8. **`head_yaw` is `[0, 2pi)`, zero at IMU boot** (`MahonyAHRS.h:75-78`
+   in taproot, via `GimbalSubsystem.cpp:41`), and counter-clockwise if the
+   firmware's own aim math is self-consistent (`JetsonSubsystem.cpp:92`
+   against `:255`). Our URDF turns `headlink` about -z. Unverified on the
+   robot: check the sign before trusting `root->camera`.
+9. **`odomStatus` is always `ODOM_PODS`** (`JetsonSubsystem.cpp:53`).
+10. **`deltaAngleGotHitIn` is 123 when not hit**, `HitRing::PLACEHOLDER_ANGLE`
+    (`subsystems/ui/objects/HitRing.hpp:99`), not documented here.
+11. **One mailbox slot.** Each frame overwrites the last
+    (`communication/UARTCommunication.cpp:37-44`, the TODO at `.hpp:61`), so a
+    `RELOCALIZE` landing in the same 1 ms cycle as a `CV_MSG` is lost.
+12. **`ROS_MSG` has no reader on the sentry.** Only `AutoDriveCommand` reads
+    it, and the sentry's switch schedules `SimpleAutoDriveCommand`
+    (`robots/sentry/SentryControl.hpp:61`, `:191-192`), a fixed waypoint route.
+13. **`seq` is always 0** on frames it sends (`UARTCommunication.cpp:21`).
 
 Proposed, not applied: **`POSE_MSG` (id=2) chassis yaw** (2026-09-29), two
 trailing floats taking it 25 → 33 bytes, in `UART_PROTOCOL.md`. Until both
