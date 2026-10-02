@@ -79,14 +79,12 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 8   | 4    | float32 | `y`          | `CVTarget.y`                  |
 | 12  | 4    | float32 | `z`          | `CVTarget.z`                  |
 | 16  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
-| 18  | 1    | uint8   | `flags`      | `CVTarget.flags`              |
+| 18  | 1    | uint8   | `flags`      | packed booleans, below        |
 
-`flags` bit0 = `FLAG_LEAD_APPLIED` (`x/y/z` already includes the intercept
-solve), bit1 = `FLAG_TRACK_VALID` (backed by a converged `target_tracker`
-estimate rather than a raw panel position), bit2 = `FLAG_FIRE`, bit3 =
-`FLAG_TARGET` (`x/y/z` is an aim point; clear means no target, so the MCB
-patrols), bits 4-7 reserved, 0. The bridge copies the byte as is. No
-confidence crosses the wire: the Jetson decides aim and fire itself.
+`flags` bit0 = `fire` (`CVTarget.fire`), bits 1-7 reserved, sent as 0. The
+bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS_MSG's. Every frame is an aim point: the Jetson decides aim and fire
+itself, sends nothing while it has no target, and the MCB moves the gimbal
+only on these frames.
 
 `stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
 clocks are not synced, so it is **delta-only**: the MCB compares consecutive
@@ -217,7 +215,7 @@ travelling between `thornbots_pkg` and the CV pipeline.
 `FireCommand` is gone as of 2026-09-20: it was merged into `CVTarget` as
 `fire` + `delay_ms`, and `CV_MSG` (id=1) grew `stamp_ms` so the delay has a
 reference the MCB can age. `CVDataPayload` went 17 → 23 bytes, then 19 on
-2026-10-02 when `confidence` gave way to `FLAG_TARGET`; the layout and
+2026-10-02 when `confidence` went (every frame is an aim point); the layout and
 the delta-only reading of `stamp_ms` are in the CV_MSG section above.
 
 Same two-repos-one-change rule as every other wire edit; see README.md's "MCB

@@ -735,7 +735,7 @@ private:
     p.y = msg->y;
     p.z = msg->z;
     p.delay_ms = msg->delay_ms;
-    p.flags = msg->flags;
+    p.flags = msg->fire ? 0x01 : 0x00;
 
     const bool ok = send_frame(McbMsgType::CV_MSG,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
