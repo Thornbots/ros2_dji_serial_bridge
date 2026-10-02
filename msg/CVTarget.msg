@@ -15,7 +15,8 @@ float32 x               # aim point position, odom x (m)
 float32 y               # aim point position, odom y (m)
 float32 z               # aim point position, odom z, up (m)
 float32 confidence      # detection confidence [0.0, 1.0]
-bool lead_applied        # true if x/y/z includes the intercept lead solve
-bool track_valid         # true if backed by a converged target_tracker estimate
-bool fire                # true = fire this aim point
+uint8 FLAG_LEAD_APPLIED = 1   # x/y/z includes the intercept lead solve
+uint8 FLAG_TRACK_VALID = 2    # backed by a converged target_tracker estimate
+uint8 FLAG_FIRE = 4           # fire this aim point delay_ms after header.stamp
+uint8 flags                   # FLAG_* bits; crosses the wire as CV_MSG's flags byte
 uint16 delay_ms          # ms after header.stamp to fire (0 = immediate)

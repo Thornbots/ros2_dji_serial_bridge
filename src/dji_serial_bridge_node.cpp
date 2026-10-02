@@ -736,8 +736,7 @@ private:
     p.z = msg->z;
     p.confidence = msg->confidence;
     p.delay_ms = msg->delay_ms;
-    p.flags = (msg->lead_applied ? 0x01 : 0x00) | (msg->track_valid ? 0x02 : 0x00) |
-      (msg->fire ? 0x04 : 0x00);
+    p.flags = msg->flags;
 
     const bool ok = send_frame(McbMsgType::CV_MSG,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
