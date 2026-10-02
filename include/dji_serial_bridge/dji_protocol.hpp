@@ -29,8 +29,8 @@ static constexpr uint8_t FRAME_HEAD = 0xA5;
 
 // ─── message IDs ─────────────────────────────────────────────────────────────
 // Named after the ROS topic each one carries. IDs must stay in sync with
-// enum UartMessage in JetsonSubsystem.hpp (which still says ROS_MSG, CV_MSG,
-// POSE_MSG, REF_SYS_MSG, RELOCALIZE).
+// enum UartMessage in JetsonSubsystem.hpp (old names at MCBV3 708b8d6; this
+// file's names in Thornbots/MCBV3#74).
 enum class McbMsgType : uint16_t
 {
   NAV_GOAL   = 0,    // Jetson → MCB : ~/nav_goal    (NavGoalPayload)
