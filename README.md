@@ -39,7 +39,7 @@ fix before the match test's E2 can score:
    at indexer rate 10 (`AutoAimAndFireCommand.cpp:112`) until it patrols.
 4. **It leads the target itself**, ballistics at 24 m/s on its own velocity
    estimate (`JetsonSubsystem.cpp:236-242`, `JetsonSubsystemConstants.hpp:49`).
-   With `FLAG_LEAD_APPLIED` points it would lead twice.
+   Our points are already led when `lead_enabled`, so it would lead twice.
 5. **`RELOCALIZE` is refused**: `Relocalize` is 12 bytes, with an `expectedZ`
    (`JetsonSubsystem.hpp:53-58`); ours 8. Accepted, it would still not
    overwrite odometry (`JetsonSubsystem.cpp:119` is commented out):
