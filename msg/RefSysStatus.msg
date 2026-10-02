@@ -1,5 +1,5 @@
 # Referee system status forwarded from the MCB at ~5 Hz, interleaved with
-# POSE_MSG (REF_SYS_MSG, id=3). header.stamp is when the MCB started
+# POSE (REF_SYS, id=3). header.stamp is when the MCB started
 # sending the frame, as in RobotPose.
 std_msgs/Header header
 

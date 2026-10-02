@@ -1,5 +1,5 @@
 # Pose and velocity of the robot chassis plus gimbal angles.
-# Sent by the MCB at 100 Hz (POSE_MSG, id=2). header.stamp is when the MCB
+# Sent by the MCB at 100 Hz (POSE, id=2). header.stamp is when the MCB
 # started sending the frame: its last byte's read time less the frame's wire
 # time at the baud. No MCB clock crosses the wire, and USB latency isn't
 # taken off.
@@ -14,7 +14,7 @@ float32 head_yaw   # gimbal yaw angle relative to world (radians)
 
 # Chassis heading in the world, same sense and zero as head_yaw (thornbots_pkg's
 # URDF turns both joints about -z). Not on the wire yet: 0 until the firmware
-# sends them (UART_PROTOCOL.md "Proposed: POSE_MSG chassis yaw").
+# sends them (UART_PROTOCOL.md "Proposed: POSE chassis yaw").
 float32 chassis_yaw       # radians
 float32 chassis_yaw_rate  # rad/s
 

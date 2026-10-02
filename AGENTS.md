@@ -2,7 +2,7 @@
 
 C++ node bridging the MCB's DJI-framed UART protocol to ROS 2 topics. Every
 wire format is in `UART_PROTOCOL.md`: frame layout, all five message IDs, the
-byte tables both directions, `REF_SYS_MSG` bits, `POSE_MSG` odom status codes.
+byte tables both directions, `REF_SYS` bits, `POSE` odom status codes.
 Read it before touching any struct or any `msg/` file that crosses the link.
 `README.md` keeps the topic list, parameters, diagnostics, and the MCB
 firmware-coordination notes, including which wire changes are pending.
@@ -33,8 +33,8 @@ needs a rebuild.
 
 ## Open
 
-- **`CV_MSG`'s `x/y/z` frame is documented, not settled.** The docs say
-  `odom`, POSE_MSG's frame, but the Jetson's `odom` is the localization
+- **`CV_TARGET`'s `x/y/z` frame is documented, not settled.** The docs say
+  `odom`, POSE's frame, but the Jetson's `odom` is the localization
   EKF's and RELOCALIZE moves the MCB's origin. `../CV_SPLIT_PLAN.md` W.3's
   open issues.
 

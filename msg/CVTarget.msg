@@ -1,11 +1,11 @@
 # Computer-vision aim point and fire decision, published by thornbots_pkg's
-# point_to_cv_target.py, relayed by mcb_relay and sent to the MCB as CV_MSG
+# point_to_cv_target.py, relayed by mcb_relay and sent to the MCB as CV_TARGET
 # (id=1). Fields after header are in wire order; see UART_PROTOCOL.md.
 # header.stamp crosses the wire as a millisecond stamp, so the MCB can age
 # the point. fire and delay_ms ride the same frame as the aim they were
 # solved for, which is why there is no separate fire message.
 # x/y/z is a WORLD-FRAME POSITION in odom (REP-105; z up), the frame of
-# POSE_MSG's x/y. Not a root- or camera-frame offset and not a barrel
+# POSE's x/y. Not a root- or camera-frame offset and not a barrel
 # attitude: the MCB applies its own ballistics. Every message is an aim
 # point; with no target none is sent and the MCB holds still.
 
