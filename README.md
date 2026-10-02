@@ -4,7 +4,7 @@ ROS 2 node bridging the DJI-framed UART protocol spoken by the MCB (main
 control board) with ROS 2 topics.
 
 **Wire formats: [`UART_PROTOCOL.md`](UART_PROTOCOL.md)** — frame layout, all
-five message IDs, byte tables both directions, REF_SYS bits, POSE_MSG odom
+five message IDs, byte tables both directions, REF_SYS bits, POSE odom
 status codes. Read it before touching `dji_protocol.hpp` or any `msg/` file
 that crosses the link.
 
@@ -24,9 +24,10 @@ Checked against `Thornbots/MCBV3` at `708b8d6` (newMain's head on
 moves the hit ring's source) by `sim`'s MCB emulator, which ports
 it and runs it against this node on a pty (`../sim/README.md` "MCB
 emulator"). Paths are under `MCB-project/src/`. Each line is a firmware-side
-fix before the match test's E2 can score:
+fix before the match test's E2 can score (message names are ours; the
+firmware still calls them `ROS_MSG`, `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`):
 
-1. **`CV_MSG` is refused.** `CVData` is 40 bytes (x, y, z, v, a,
+1. **`CV_TARGET` is refused.** `CVData` is 40 bytes (x, y, z, v, a,
    confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 19, and
    `getMsg` drops any size mismatch (`JetsonSubsystem.hpp:204`). The gimbal
    never sees a target.
@@ -45,10 +46,10 @@ fix before the match test's E2 can score:
    overwrite odometry (`JetsonSubsystem.cpp:119` is commented out):
    `SimpleAutoDriveCommand` applies it only at full HP in a resupply zone,
    offset by ±0.688, -0.05 m (`subsystems/drivetrain/SimpleAutoDriveCommand.hpp:91-95`).
-6. **`POSE_MSG` is 90 Hz and `REF_SYS_MSG` 10 Hz**, not 100 and 5: nine
+6. **`POSE` is 90 Hz and `REF_SYS` 10 Hz**, not 100 and 5: nine
    poses then one ref on one 10 ms timer (`JetsonSubsystem.cpp:41-80`); the
    200 ms ref timer (`JetsonSubsystem.hpp:141-142`) is unused.
-7. **`POSE_MSG` x/y is x right, y forward** of the heading at power-on
+7. **`POSE` x/y is x right, y forward** of the heading at power-on
    (`SimpleAutoDriveCommand.hpp:188-189`, `DrivetrainDriveCommand.cpp:40-41`),
    not REP-105's x forward, y left. `pose_translator` reads it as REP-105.
 8. **`head_yaw` is `[0, 2pi)`, zero at IMU boot** (`MahonyAHRS.h:75-78`
@@ -56,18 +57,18 @@ fix before the match test's E2 can score:
    firmware's own aim math is self-consistent (`JetsonSubsystem.cpp:92`
    against `:255`). Our URDF turns `headlink` about -z. Unverified on the
    robot: check the sign before trusting `root->camera`.
-9. **`odomStatus` is always `ODOM_PODS`** (`JetsonSubsystem.cpp:53`).
-10. **`deltaAngleGotHitIn` is 123 when not hit**, `HitRing::PLACEHOLDER_ANGLE`
+9. **`odom_status` is always `ODOM_PODS`** (`JetsonSubsystem.cpp:53`).
+10. **`delta_angle_got_hit_in` is 123 when not hit**, `HitRing::PLACEHOLDER_ANGLE`
     (`subsystems/ui/objects/HitRing.hpp:99`), not documented here.
 11. **One mailbox slot.** Each frame overwrites the last
     (`communication/UARTCommunication.cpp:37-44`, the TODO at `.hpp:61`), so a
-    `RELOCALIZE` landing in the same 1 ms cycle as a `CV_MSG` is lost.
-12. **`ROS_MSG` has no reader on the sentry.** Only `AutoDriveCommand` reads
+    `RELOCALIZE` landing in the same 1 ms cycle as a `CV_TARGET` is lost.
+12. **`NAV_GOAL` has no reader on the sentry.** Only `AutoDriveCommand` reads
     it, and the sentry's switch schedules `SimpleAutoDriveCommand`
     (`robots/sentry/SentryControl.hpp:61`, `:191-192`), a fixed waypoint route.
 13. **`seq` is always 0** on frames it sends (`UARTCommunication.cpp:21`).
 
-Proposed, not applied: **`POSE_MSG` (id=2) chassis yaw** (2026-09-29), two
+Proposed, not applied: **`POSE` (id=2) chassis yaw** (2026-09-29), two
 trailing floats taking it 25 → 33 bytes, in `UART_PROTOCOL.md`. Until both
 sides agree, `RobotPose.chassis_yaw` and `chassis_yaw_rate` read 0.
 

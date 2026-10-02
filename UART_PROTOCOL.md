@@ -30,17 +30,19 @@ retransmission, acknowledgement or flow control in either direction.
 
 ## Message types
 
-| ID | Direction     | Payload struct      | Bytes | ROS topic     | ROS type                           | Rate         |
-|----|---------------|---------------------|-------|---------------|------------------------------------|--------------|
-| 0  | Jetson → MCB  | `ROSDataPayload`    | 8     | `~/nav_goal`  | `geometry_msgs/msg/PointStamped`   | on publish   |
-| 1  | Jetson → MCB  | `CVDataPayload`     | 19    | `~/cv_target` | `dji_serial_bridge/msg/CVTarget`   | on publish   |
-| 2  | MCB → Jetson  | `PoseDataPayload`   | 25    | `~/pose`      | `dji_serial_bridge/msg/RobotPose`  | 100 Hz       |
-| 3  | MCB → Jetson  | `RefSysMsgPayload`  | 11    | `~/ref_sys`   | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz      |
-| 4  | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize`| `geometry_msgs/msg/PointStamped`   | on correction|
+| ID | Name         | Direction     | Payload struct      | Bytes | ROS topic      | ROS type                             | Rate          |
+|----|--------------|---------------|---------------------|-------|----------------|--------------------------------------|---------------|
+| 0  | `NAV_GOAL`   | Jetson → MCB  | `NavGoalPayload`    | 8     | `~/nav_goal`   | `geometry_msgs/msg/PointStamped`     | on publish    |
+| 1  | `CV_TARGET`  | Jetson → MCB  | `CvTargetPayload`   | 19    | `~/cv_target`  | `dji_serial_bridge/msg/CVTarget`     | on publish    |
+| 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 100 Hz        |
+| 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz         |
+| 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 
-IDs match `enum UartMessage` in the firmware's `JetsonSubsystem.hpp`. Topics
-are in the node's private namespace: `~/nav_goal` is
-`/dji_serial_bridge/nav_goal` unless remapped.
+Each message is named after its topic, and its payload fields after the ROS
+fields they carry. IDs match `enum UartMessage` in the firmware's
+`JetsonSubsystem.hpp`, which still uses the old names: `ROS_MSG`, `CV_MSG`,
+`POSE_MSG`, `REF_SYS_MSG`, `RELOCALIZE`. Topics are in the node's private
+namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
 
 An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 
@@ -52,7 +54,7 @@ Transmitted from the subscriber callback: one ROS message in, one frame out.
 No timer, no retransmission; the wire rate is the publisher's rate. Fields are
 copied without clamping or validation.
 
-### ROS_MSG (id=0) — navigation goal
+### NAV_GOAL (id=0) — navigation goal
 
 8-byte payload, 17-byte frame. Subscribed on `~/nav_goal`
 (`geometry_msgs/msg/PointStamped`, depth-10 reliable). `point.z` and the
@@ -60,14 +62,14 @@ header are discarded.
 
 | Off | Size | Type    | Field     | From      |
 |-----|------|---------|-----------|-----------|
-| 0   | 4    | float32 | `targetX` | `point.x` |
-| 4   | 4    | float32 | `targetY` | `point.y` |
+| 0   | 4    | float32 | `x`       | `point.x` |
+| 4   | 4    | float32 | `y`       | `point.y` |
 
 A field goal in the MCB's odometry frame, metres, consumed by its autonomous
 drive controller. No publisher in this workspace: `mcb_relay` wires up
 `~/cv_target` and `~/relocalize` only.
 
-### CV_MSG (id=1) — aim point and fire decision
+### CV_TARGET (id=1) — aim point and fire decision
 
 19-byte payload, 28-byte frame. Subscribed on `~/cv_target`
 (`dji_serial_bridge/msg/CVTarget`, SensorDataQoS, best-effort).
@@ -82,9 +84,10 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 18  | 1    | uint8   | `flags`      | packed booleans, below        |
 
 `flags` bit0 = `fire` (`CVTarget.fire`), bits 1-7 reserved, sent as 0. The
-bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS_MSG's. Every frame is an aim point: the Jetson decides aim and fire
-itself, sends nothing while it has no target, and the MCB moves the gimbal
-only on these frames.
+bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS's.
+Every frame is an aim point: the Jetson decides aim and fire itself, sends
+nothing while it has no target, and the MCB moves the gimbal only on these
+frames.
 
 `stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
 clocks are not synced, so it is **delta-only**: the MCB compares consecutive
@@ -99,7 +102,7 @@ was never computed for. `delay_ms` = 0 with `fire` set means fire now;
 `fire` clear means `delay_ms` is meaningless.
 
 `x/y/z` is a world-frame position in metres: `odom` (REP-105, z up), the
-frame POSE_MSG's `x/y` are in. The MCB holds the point with its IMU and
+frame POSE's `x/y` are in. The MCB holds the point with its IMU and
 odometry while the chassis moves and turns, then aims at it and applies its
 own gravity, drag and muzzle geometry. It is not a root- or camera-frame
 offset and not a barrel attitude. Velocity
@@ -114,11 +117,11 @@ header are discarded.
 
 | Off | Size | Type    | Field       | From      |
 |-----|------|---------|-------------|-----------|
-| 0   | 4    | float32 | `expectedX` | `point.x` |
-| 4   | 4    | float32 | `expectedY` | `point.y` |
+| 0   | 4    | float32 | `x`         | `point.x` |
+| 4   | 4    | float32 | `y`         | `point.y` |
 
 The lidar-estimated position the MCB adopts as its odometry origin, same frame
-and units as POSE_MSG's `x/y`. It overwrites MCB odometry. The node logs every
+and units as POSE's `x/y`. It overwrites MCB odometry. The node logs every
 transmission at INFO with the last received `~/pose` beside the new coordinate.
 
 ---
@@ -133,20 +136,20 @@ frame: the read time of its last byte less the frame's wire time at `baudrate`
 (10 bits per byte). No MCB clock is on the wire, and the USB-serial latency
 before a read is not taken off.
 
-### POSE_MSG (id=2) — chassis pose and gimbal angles
+### POSE (id=2) — chassis pose and gimbal angles
 
 25-byte payload, 34-byte frame, 100 Hz. Published on `~/pose`
 (`dji_serial_bridge/msg/RobotPose`, SensorDataQoS).
 
-| Off | Size | Type    | Field        | Meaning                                  |
-|-----|------|---------|--------------|------------------------------------------|
-| 0   | 4    | float32 | `x`          | chassis X, odometry frame, metres        |
+| Off | Size | Type    | Field         | Meaning                                  |
+|-----|------|---------|---------------|------------------------------------------|
+| 0   | 4    | float32 | `x`           | chassis X, odometry frame, metres        |
 | 4   | 4    | float32 | `y`          | chassis Y, odometry frame, metres        |
 | 8   | 4    | float32 | `vel_x`      | chassis X velocity, m/s                  |
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
 | 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
 | 20  | 4    | float32 | `head_yaw`   | gimbal yaw relative to world, radians    |
-| 24  | 1    | uint8   | `odomStatus` | which source produced x/y/vel, below     |
+| 24  | 1    | uint8   | `odom_status`| which source produced x/y/vel, below     |
 
 | Code | `RobotPose` constant         | Source of `x/y/vel_x/vel_y`                  |
 |------|------------------------------|----------------------------------------------|
@@ -161,7 +164,7 @@ are gimbal encoder values and are unaffected. The node copies the byte through
 without validating it against the table. Transitions are logged: INFO back to
 pods, ERROR into 2, WARN into 1 or 3.
 
-### Proposed: POSE_MSG chassis yaw
+### Proposed: POSE chassis yaw
 
 Not applied: the bytes above are what both sides send today. `RobotPose`
 already has `chassis_yaw` and `chassis_yaw_rate`, published as 0. Proposed
@@ -178,19 +181,19 @@ already has `chassis_yaw` and `chassis_yaw_rate`, published as 0. Proposed
 rate less the yaw motor's. `thornbots_pkg` turns it into the `chassis_yaw`
 joint only: `root` stays heading-fixed, so localization doesn't read it.
 
-### REF_SYS_MSG (id=3) — referee system status
+### REF_SYS (id=3) — referee system status
 
-11-byte payload, 20-byte frame, ~5 Hz, interleaved with POSE_MSG. Published on
+11-byte payload, 20-byte frame, ~5 Hz, interleaved with POSE. Published on
 `~/ref_sys` (`dji_serial_bridge/msg/RefSysStatus`, SensorDataQoS).
 
-| Off | Size | Type    | Field                | Meaning                                   |
-|-----|------|---------|----------------------|-------------------------------------------|
-| 0   | 1    | uint8   | `gameStage`          | referee game stage enum value             |
-| 1   | 2    | uint16  | `stageTimeRemaining` | seconds left in the current stage         |
-| 3   | 2    | uint16  | `robotHp`            | current robot HP                          |
-| 5   | 1    | uint8   | `robotID`            | normalised to red-team numbering (hero=1) |
-| 6   | 4    | float32 | `deltaAngleGotHitIn` | radians from current heading of last hit  |
-| 10  | 1    | uint8   | `booleans`           | 8 flags, MSB first, table below           |
+| Off | Size | Type    | Field                    | Meaning                                   |
+|-----|------|---------|--------------------------|-------------------------------------------|
+| 0   | 1    | uint8   | `game_stage`             | referee game stage enum value             |
+| 1   | 2    | uint16  | `stage_time_remaining`   | seconds left in the current stage         |
+| 3   | 2    | uint16  | `robot_hp`               | current robot HP                          |
+| 5   | 1    | uint8   | `robot_id`               | normalised to red-team numbering (hero=1) |
+| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current heading of last hit  |
+| 10  | 1    | uint8   | `booleans`               | 8 flags, MSB first, table below           |
 
 | Bit | Firmware name            | `RefSysStatus` field       | Meaning                           |
 |-----|--------------------------|----------------------------|-----------------------------------|
@@ -213,10 +216,10 @@ The node unpacks the byte into the eight named booleans.
 travelling between `thornbots_pkg` and the CV pipeline.
 
 `FireCommand` is gone as of 2026-09-20: it was merged into `CVTarget` as
-`fire` + `delay_ms`, and `CV_MSG` (id=1) grew `stamp_ms` so the delay has a
-reference the MCB can age. `CVDataPayload` went 17 → 23 bytes, then 19 on
+`fire` + `delay_ms`, and `CV_TARGET` (id=1) grew `stamp_ms` so the delay has a
+reference the MCB can age. `CvTargetPayload` went 17 → 23 bytes, then 19 on
 2026-10-02 when `confidence` went (every frame is an aim point); the layout and
-the delta-only reading of `stamp_ms` are in the CV_MSG section above.
+the delta-only reading of `stamp_ms` are in the CV_TARGET section above.
 
 Same two-repos-one-change rule as every other wire edit; see README.md's "MCB
 firmware coordination".

@@ -239,13 +239,13 @@ private:
   std::atomic<uint64_t> nav_goal_msgs_tx_{0};
   std::atomic<uint64_t> cv_target_msgs_tx_{0};
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
-  // Last chassis pose received from the MCB (via POSE_MSG / ~/pose). Cached so
+  // Last chassis pose received from the MCB (via POSE / ~/pose). Cached so
   // relocalize_callback can log the coordinate being overwritten. Written on
   // the serial read thread, read on the executor thread — hence atomic.
   std::atomic<float> last_pose_x_{0.0f};
   std::atomic<float> last_pose_y_{0.0f};
   std::atomic<bool> have_pose_{false};
-  // Last odomStatus byte seen, so handle_pose logs transitions, not every frame.
+  // Last odom_status byte seen, so handle_pose logs transitions, not every frame.
   std::atomic<uint8_t> last_odom_status_{0};
   // Consecutive poll() calls that returned 0 (no data).
   // Resets to 0 the moment any byte arrives.
@@ -556,7 +556,7 @@ private:
     uint16_t msg_type, const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
     switch (static_cast<McbMsgType>(msg_type)) {
-      case McbMsgType::POSE_MSG:
+      case McbMsgType::POSE:
         handle_pose(payload, len, stamp);
         break;
       case McbMsgType::REF_SYS:
@@ -573,7 +573,7 @@ private:
   // Incoming message handlers  (MCB → Jetson)
   // ═══════════════════════════════════════════════════════════════════════
 
-  // Names for PoseDataPayload::odomStatus, for logs only.
+  // Names for PosePayload::odom_status, for logs only.
   static const char * odom_status_name(uint8_t s)
   {
     switch (s) {
@@ -587,14 +587,14 @@ private:
 
   void handle_pose(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
-    if (len != sizeof(PoseDataPayload)) {
+    if (len != sizeof(PosePayload)) {
       RCLCPP_WARN(get_logger(),
-                        "POSE_MSG: unexpected payload length %u (expected %zu)",
-                        len, sizeof(PoseDataPayload));
+                        "POSE: unexpected payload length %u (expected %zu)",
+                        len, sizeof(PosePayload));
       return;
     }
 
-    PoseDataPayload raw{};
+    PosePayload raw{};
     std::memcpy(&raw, payload, sizeof(raw));
 
     // Cache the MCB's latest reported position so a subsequent relocalize
@@ -611,25 +611,25 @@ private:
     msg.vel_y = raw.vel_y;
     msg.head_pitch = raw.head_pitch;
     msg.head_yaw = raw.head_yaw;
-    // chassis_yaw/_rate stay 0 until POSE_MSG carries them (UART_PROTOCOL.md).
-    msg.odom_status = raw.odomStatus;
+    // chassis_yaw/_rate stay 0 until POSE carries them (UART_PROTOCOL.md).
+    msg.odom_status = raw.odom_status;
 
     // Pose arrives at 100 Hz, so log the status byte only when it moves.
     const uint8_t prev_status =
-      last_odom_status_.exchange(raw.odomStatus, std::memory_order_relaxed);
-    if (raw.odomStatus != prev_status) {
-      if (raw.odomStatus == 0) {
+      last_odom_status_.exchange(raw.odom_status, std::memory_order_relaxed);
+    if (raw.odom_status != prev_status) {
+      if (raw.odom_status == 0) {
         RCLCPP_INFO(get_logger(),
                             "odom_status: back on odometry pods (was %u, %s)",
                             prev_status, odom_status_name(prev_status));
-      } else if (raw.odomStatus == 2) {
+      } else if (raw.odom_status == 2) {
         RCLCPP_ERROR(get_logger(),
                              "odom_status: 2 (%s) — MCB x/y/vel have no source",
-                             odom_status_name(raw.odomStatus));
+                             odom_status_name(raw.odom_status));
       } else {
         RCLCPP_WARN(get_logger(),
                             "odom_status: %u (%s) — MCB x/y/vel degraded by wheel slip",
-                            raw.odomStatus, odom_status_name(raw.odomStatus));
+                            raw.odom_status, odom_status_name(raw.odom_status));
       }
     }
 
@@ -641,7 +641,7 @@ private:
                         "x=%.3f y=%.3f vel_x=%.3f vel_y=%.3f pitch=%.3f yaw=%.3f "
                         "odom_status=%u (%s)",
                         raw.x, raw.y, raw.vel_x, raw.vel_y, raw.head_pitch, raw.head_yaw,
-                        raw.odomStatus, odom_status_name(raw.odomStatus));
+                        raw.odom_status, odom_status_name(raw.odom_status));
     } else {
       RCLCPP_DEBUG(get_logger(),
                          "handle_pose #%lu: x=%.3f y=%.3f vel_x=%.3f vel_y=%.3f",
@@ -652,23 +652,23 @@ private:
 
   void handle_ref_sys(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
-    if (len != sizeof(RefSysMsgPayload)) {
+    if (len != sizeof(RefSysPayload)) {
       RCLCPP_WARN(get_logger(),
                         "REF_SYS: unexpected payload length %u (expected %zu)",
-                        len, sizeof(RefSysMsgPayload));
+                        len, sizeof(RefSysPayload));
       return;
     }
 
-    RefSysMsgPayload raw{};
+    RefSysPayload raw{};
     std::memcpy(&raw, payload, sizeof(raw));
 
     auto msg = dji_serial_bridge::msg::RefSysStatus{};
     msg.header.stamp = stamp;
-    msg.game_stage = raw.gameStage;
-    msg.stage_time_remaining = raw.stageTimeRemaining;
-    msg.robot_hp = raw.robotHp;
-    msg.robot_id = raw.robotID;
-    msg.delta_angle_got_hit_in = raw.deltaAngleGotHitIn;
+    msg.game_stage = raw.game_stage;
+    msg.stage_time_remaining = raw.stage_time_remaining;
+    msg.robot_hp = raw.robot_hp;
+    msg.robot_id = raw.robot_id;
+    msg.delta_angle_got_hit_in = raw.delta_angle_got_hit_in;
 
     const uint8_t b = raw.booleans;
     msg.is_on_blue_team = (b >> 7) & 1u;
@@ -692,11 +692,11 @@ private:
                         "blue=%u healing=%u reload=%u center=%u "
                         "team_center=%u opp_center=%u "
                         "chassis_pwr=%u gimbal_pwr=%u delta_angle=%.1f",
-                        count, raw.gameStage, raw.stageTimeRemaining, raw.robotHp,
-                        raw.robotID,
+                        count, raw.game_stage, raw.stage_time_remaining, raw.robot_hp,
+                        raw.robot_id,
         (b >> 7) & 1u, (b >> 6) & 1u, (b >> 5) & 1u, (b >> 4) & 1u,
         (b >> 3) & 1u, (b >> 2) & 1u,
-        (b >> 1) & 1u, b & 1u, raw.deltaAngleGotHitIn);
+        (b >> 1) & 1u, b & 1u, raw.delta_angle_got_hit_in);
     }
     ref_sys_pub_->publish(msg);
   }
@@ -708,23 +708,23 @@ private:
   // The wire carries no stamp, so the header stops here.
   void nav_goal_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
   {
-    ROSDataPayload p{};
-    p.targetX = static_cast<float>(msg->point.x);
-    p.targetY = static_cast<float>(msg->point.y);
+    NavGoalPayload p{};
+    p.x = static_cast<float>(msg->point.x);
+    p.y = static_cast<float>(msg->point.y);
 
-    const bool ok = send_frame(McbMsgType::ROS_MSG,
+    const bool ok = send_frame(McbMsgType::NAV_GOAL,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
     if (ok) {
       nav_goal_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
-                                  "Failed to send ROS_MSG (nav_goal)");
+                                  "Failed to send NAV_GOAL");
     }
   }
 
   void cv_target_callback(const dji_serial_bridge::msg::CVTarget::SharedPtr msg)
   {
-    CVDataPayload p{};
+    CvTargetPayload p{};
     // Low 32 bits of the ROS stamp in ms: the MCB reads it delta-only
     // (the clocks are not synced), so the ~49-day wrap is harmless.
     const uint64_t stamp_ms =
@@ -737,21 +737,21 @@ private:
     p.delay_ms = msg->delay_ms;
     p.flags = msg->fire ? 0x01 : 0x00;
 
-    const bool ok = send_frame(McbMsgType::CV_MSG,
+    const bool ok = send_frame(McbMsgType::CV_TARGET,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
     if (ok) {
       cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
-                                  "Failed to send CV_MSG (cv_target)");
+                                  "Failed to send CV_TARGET");
     }
   }
 
   void relocalize_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
   {
     RelocalizePayload p{};
-    p.expectedX = static_cast<float>(msg->point.x);
-    p.expectedY = static_cast<float>(msg->point.y);
+    p.x = static_cast<float>(msg->point.x);
+    p.y = static_cast<float>(msg->point.y);
 
     const bool ok = send_frame(McbMsgType::RELOCALIZE,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));

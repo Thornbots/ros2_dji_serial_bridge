@@ -28,14 +28,16 @@
 static constexpr uint8_t FRAME_HEAD = 0xA5;
 
 // ─── message IDs ─────────────────────────────────────────────────────────────
-// Must stay in sync with enum UartMessage in JetsonSubsystem.hpp.
+// Named after the ROS topic each one carries. IDs must stay in sync with
+// enum UartMessage in JetsonSubsystem.hpp (which still says ROS_MSG, CV_MSG,
+// POSE_MSG, REF_SYS_MSG, RELOCALIZE).
 enum class McbMsgType : uint16_t
 {
-  ROS_MSG    = 0,    // Jetson → MCB : navigation goal  (ROSDataPayload)
-  CV_MSG     = 1,    // Jetson → MCB : CV target         (CVDataPayload)
-  POSE_MSG   = 2,    // MCB → Jetson : robot pose        (PoseDataPayload)
-  REF_SYS    = 3,    // MCB → Jetson : referee system    (RefSysMsgPayload)
-  RELOCALIZE = 4,    // Jetson → MCB : lidar position    (RelocalizePayload)
+  NAV_GOAL   = 0,    // Jetson → MCB : ~/nav_goal    (NavGoalPayload)
+  CV_TARGET  = 1,    // Jetson → MCB : ~/cv_target   (CvTargetPayload)
+  POSE       = 2,    // MCB → Jetson : ~/pose        (PosePayload)
+  REF_SYS    = 3,    // MCB → Jetson : ~/ref_sys     (RefSysPayload)
+  RELOCALIZE = 4,    // Jetson → MCB : ~/relocalize  (RelocalizePayload)
 };
 
 // ─── DJI wire header  (exactly 7 bytes) ─────────────────────────────────────
@@ -54,12 +56,12 @@ static constexpr size_t CRC8_COVERAGE = offsetof(FrameHeader, crc8);  // == 4
 
 // ─── MCB → Jetson payloads ───────────────────────────────────────────────────
 
-// POSE_MSG (id=2) — sent at 100 Hz by the MCB.
+// POSE (id=2) — sent at 100 Hz by the MCB, published on ~/pose (RobotPose).
 // Mirror of struct PoseData (modm_packed) in JetsonSubsystem.hpp.
-// Trailing odomStatus byte rides along with every pose rather than arriving
+// Trailing odom_status byte rides along with every pose rather than arriving
 // as its own message, so the verdict can never be newer or older than the
 // x/y it applies to. see UART_PROTOCOL.md for the status code table
-struct __attribute__((packed)) PoseDataPayload
+struct __attribute__((packed)) PosePayload
 {
   float   x;             // chassis X  (odometry, metres)
   float   y;             // chassis Y  (odometry, metres)
@@ -67,47 +69,49 @@ struct __attribute__((packed)) PoseDataPayload
   float   vel_y;         // chassis vY (m/s)
   float   head_pitch;    // gimbal pitch encoder value (radians)
   float   head_yaw;      // gimbal yaw relative to world (radians)
-  uint8_t odomStatus;    // odometry source: 0 pods, 1 drivetrain, 2 i2c dead
+  uint8_t odom_status;   // odometry source: 0 pods, 1 drivetrain, 2 i2c dead
   // (no data), 3 i2c dead using drivetrain
 };
-static_assert(sizeof(PoseDataPayload) == 25, "PoseDataPayload size mismatch");
+static_assert(sizeof(PosePayload) == 25, "PosePayload size mismatch");
 
-// REF_SYS_MSG (id=3) — sent at ~5 Hz by the MCB, interleaved with POSE_MSG.
+// REF_SYS (id=3) — sent at ~5 Hz by the MCB, interleaved with POSE, published
+// on ~/ref_sys (RefSysStatus).
 // Mirror of struct RefSysMsg (modm_packed) in JetsonSubsystem.hpp.
 // Booleans byte bit layout (MSB first): see UART_PROTOCOL.md for the full
 // bit-to-flag table (team/health/zone RFIDs/power flags).
-struct __attribute__((packed)) RefSysMsgPayload
+struct __attribute__((packed)) RefSysPayload
 {
-  uint8_t  gameStage;
-  uint16_t stageTimeRemaining;
-  uint16_t robotHp;
-  uint8_t  robotID;                // normalised to red-team numbering (hero == 1)
-  float    deltaAngleGotHitIn;     // radians from current heading
+  uint8_t  game_stage;
+  uint16_t stage_time_remaining;
+  uint16_t robot_hp;
+  uint8_t  robot_id;                // normalised to red-team numbering (hero == 1)
+  float    delta_angle_got_hit_in;  // radians from current heading
   uint8_t  booleans;
 };
-static_assert(sizeof(RefSysMsgPayload) == 11, "RefSysMsgPayload size mismatch");
+static_assert(sizeof(RefSysPayload) == 11, "RefSysPayload size mismatch");
 
 // ─── Jetson → MCB payloads ───────────────────────────────────────────────────
 
-// ROS_MSG (id=0) — navigation goal for the autonomous drive controller.
-// Mirror of struct ROSData in JetsonSubsystem.hpp.
-struct __attribute__((packed)) ROSDataPayload
+// NAV_GOAL (id=0) — navigation goal for the autonomous drive controller,
+// from ~/nav_goal (PointStamped). Mirror of struct ROSData in JetsonSubsystem.hpp.
+struct __attribute__((packed)) NavGoalPayload
 {
-  float targetX;
-  float targetY;
+  float x;
+  float y;
 };
-static_assert(sizeof(ROSDataPayload) == 8, "ROSDataPayload size mismatch");
+static_assert(sizeof(NavGoalPayload) == 8, "NavGoalPayload size mismatch");
 
-// CV_MSG (id=1) — computer-vision aim point and fire decision in one frame,
-// so the delay can never pair with an aim point it was not solved for.
-// x/y/z is a WORLD-FRAME POSITION in odom, POSE_MSG's frame (not a root- or
+// CV_TARGET (id=1) — from ~/cv_target (CVTarget): aim point and fire decision
+// in one frame, so the delay can never pair with an aim point it was not
+// solved for.
+// x/y/z is a WORLD-FRAME POSITION in odom, POSE's frame (not a root- or
 // camera-frame offset, not a barrel attitude -- Type-C applies its own
 // ballistics on top).
 // stamp_ms is the Jetson clock in ms, low 32 bits: the two clocks are not
 // synced, so the MCB uses it delta-only (staleness between consecutive
 // frames) and runs delay_ms from frame receipt.
 // Mirror of struct CVData in JetsonSubsystem.hpp.
-struct __attribute__((packed)) CVDataPayload
+struct __attribute__((packed)) CvTargetPayload
 {
   uint32_t stamp_ms;     // decision time, Jetson clock, delta-only
   float    x;            // position, odom x (metres)
@@ -116,14 +120,14 @@ struct __attribute__((packed)) CVDataPayload
   uint16_t delay_ms;     // fire this many ms after stamp_ms (0 = immediate)
   uint8_t  flags;        // CVTarget booleans: bit0 fire, bits 1-7 reserved (0)
 };
-static_assert(sizeof(CVDataPayload) == 19, "CVDataPayload size mismatch");
+static_assert(sizeof(CvTargetPayload) == 19, "CvTargetPayload size mismatch");
 
-// RELOCALIZE (id=4) — lidar-estimated robot position sent back to the MCB
-// so it can update its odometry origin.
+// RELOCALIZE (id=4) — lidar-estimated robot position from ~/relocalize
+// (PointStamped), sent back to the MCB so it can update its odometry origin.
 // Mirror of struct Relocalize in JetsonSubsystem.hpp.
 struct __attribute__((packed)) RelocalizePayload
 {
-  float expectedX;
-  float expectedY;
+  float x;
+  float y;
 };
 static_assert(sizeof(RelocalizePayload) == 8, "RelocalizePayload size mismatch");
