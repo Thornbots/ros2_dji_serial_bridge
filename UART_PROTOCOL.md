@@ -80,12 +80,12 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 12  | 4    | float32 | `z`          | `CVTarget.z`                  |
 | 16  | 4    | float32 | `confidence` | `CVTarget.confidence`         |
 | 20  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
-| 22  | 1    | uint8   | `flags`      | packed, below                 |
+| 22  | 1    | uint8   | `flags`      | `CVTarget.flags`              |
 
-`flags` bit0 = `lead_applied` (`x/y/z` already includes the intercept solve),
-bit1 = `track_valid` (backed by a converged `target_tracker` estimate rather
-than a raw panel position), bit2 = `fire` (`CVTarget.fire`), bits 3-7
-reserved, sent as 0.
+`flags` bit0 = `FLAG_LEAD_APPLIED` (`x/y/z` already includes the intercept
+solve), bit1 = `FLAG_TRACK_VALID` (backed by a converged `target_tracker`
+estimate rather than a raw panel position), bit2 = `FLAG_FIRE`, bits 3-7
+reserved, 0. The bridge copies the byte as is.
 
 `stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
 clocks are not synced, so it is **delta-only**: the MCB compares consecutive

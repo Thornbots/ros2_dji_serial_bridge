@@ -115,7 +115,7 @@ struct __attribute__((packed)) CVDataPayload
   float    z;            // position, odom z, up (metres)
   float    confidence;   // [0.0, 1.0]
   uint16_t delay_ms;     // fire this many ms after stamp_ms (0 = immediate)
-  uint8_t  flags;        // bit0 lead_applied, bit1 track_valid, bit2 fire
+  uint8_t  flags;        // CVTarget.flags as is: FLAG_LEAD_APPLIED, _TRACK_VALID, _FIRE
 };
 static_assert(sizeof(CVDataPayload) == 23, "CVDataPayload size mismatch");
 
