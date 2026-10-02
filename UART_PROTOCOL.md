@@ -40,8 +40,9 @@ retransmission, acknowledgement or flow control in either direction.
 
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs match `enum UartMessage` in the firmware's
-`JetsonSubsystem.hpp`, which still uses the old names: `ROS_MSG`, `CV_MSG`,
-`POSE_MSG`, `REF_SYS_MSG`, `RELOCALIZE`. Topics are in the node's private
+`JetsonSubsystem.hpp`. At MCBV3 `708b8d6` it still uses the old names
+(`ROS_MSG`, `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`); Thornbots/MCBV3#74 (open)
+takes these names and layouts. Topics are in the node's private
 namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
 
 An inbound frame with any other `msgType` is counted, logged at WARN, dropped.

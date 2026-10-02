@@ -25,9 +25,12 @@ moves the hit ring's source) by `sim`'s MCB emulator, which ports
 it and runs it against this node on a pty (`../sim/README.md` "MCB
 emulator"). Paths are under `MCB-project/src/`. Each line is a firmware-side
 fix before the match test's E2 can score (message names are ours; the
-firmware still calls them `ROS_MSG`, `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`):
+firmware still calls them `ROS_MSG`, `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`).
+Thornbots/MCBV3#74 (open, 2026-10-02) takes our names and fixes items 1
+and 5; it takes `CV_TARGET` frames but doesn't aim or fire on them yet, so
+items 2-4 stay:
 
-1. **`CV_TARGET` is refused.** `CVData` is 40 bytes (x, y, z, v, a,
+1. **`CV_TARGET` is refused** (fixed in MCBV3#74). `CVData` is 40 bytes (x, y, z, v, a,
    confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 19, and
    `getMsg` drops any size mismatch (`JetsonSubsystem.hpp:204`). The gimbal
    never sees a target.
@@ -41,7 +44,7 @@ firmware still calls them `ROS_MSG`, `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`):
 4. **It leads the target itself**, ballistics at 24 m/s on its own velocity
    estimate (`JetsonSubsystem.cpp:236-242`, `JetsonSubsystemConstants.hpp:49`).
    Our points are already led when `lead_enabled`, so it would lead twice.
-5. **`RELOCALIZE` is refused**: `Relocalize` is 12 bytes, with an `expectedZ`
+5. **`RELOCALIZE` is refused** (fixed in MCBV3#74): `Relocalize` is 12 bytes, with an `expectedZ`
    (`JetsonSubsystem.hpp:53-58`); ours 8. Accepted, it would still not
    overwrite odometry (`JetsonSubsystem.cpp:119` is commented out):
    `SimpleAutoDriveCommand` applies it only at full HP in a resupply zone,
