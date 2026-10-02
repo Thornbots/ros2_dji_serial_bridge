@@ -14,9 +14,9 @@ std_msgs/Header header   # stamp = decision time, wire stamp_ms; frame_id = odom
 float32 x               # aim point position, odom x (m)
 float32 y               # aim point position, odom y (m)
 float32 z               # aim point position, odom z, up (m)
-float32 confidence      # detection confidence [0.0, 1.0]
 uint8 FLAG_LEAD_APPLIED = 1   # x/y/z includes the intercept lead solve
 uint8 FLAG_TRACK_VALID = 2    # backed by a converged target_tracker estimate
 uint8 FLAG_FIRE = 4           # fire this aim point delay_ms after header.stamp
+uint8 FLAG_TARGET = 8         # x/y/z is an aim point; clear = no target, the MCB patrols
 uint8 flags                   # FLAG_* bits; crosses the wire as CV_MSG's flags byte
 uint16 delay_ms          # ms after header.stamp to fire (0 = immediate)

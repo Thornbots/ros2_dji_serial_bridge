@@ -33,7 +33,7 @@ retransmission, acknowledgement or flow control in either direction.
 | ID | Direction     | Payload struct      | Bytes | ROS topic     | ROS type                           | Rate         |
 |----|---------------|---------------------|-------|---------------|------------------------------------|--------------|
 | 0  | Jetson → MCB  | `ROSDataPayload`    | 8     | `~/nav_goal`  | `geometry_msgs/msg/PointStamped`   | on publish   |
-| 1  | Jetson → MCB  | `CVDataPayload`     | 23    | `~/cv_target` | `dji_serial_bridge/msg/CVTarget`   | on publish   |
+| 1  | Jetson → MCB  | `CVDataPayload`     | 19    | `~/cv_target` | `dji_serial_bridge/msg/CVTarget`   | on publish   |
 | 2  | MCB → Jetson  | `PoseDataPayload`   | 25    | `~/pose`      | `dji_serial_bridge/msg/RobotPose`  | 100 Hz       |
 | 3  | MCB → Jetson  | `RefSysMsgPayload`  | 11    | `~/ref_sys`   | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz      |
 | 4  | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize`| `geometry_msgs/msg/PointStamped`   | on correction|
@@ -69,7 +69,7 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 
 ### CV_MSG (id=1) — aim point and fire decision
 
-23-byte payload, 32-byte frame. Subscribed on `~/cv_target`
+19-byte payload, 28-byte frame. Subscribed on `~/cv_target`
 (`dji_serial_bridge/msg/CVTarget`, SensorDataQoS, best-effort).
 
 | Off | Size | Type    | Field        | From                          |
@@ -78,14 +78,15 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 4   | 4    | float32 | `x`          | `CVTarget.x`                  |
 | 8   | 4    | float32 | `y`          | `CVTarget.y`                  |
 | 12  | 4    | float32 | `z`          | `CVTarget.z`                  |
-| 16  | 4    | float32 | `confidence` | `CVTarget.confidence`         |
-| 20  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
-| 22  | 1    | uint8   | `flags`      | `CVTarget.flags`              |
+| 16  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
+| 18  | 1    | uint8   | `flags`      | `CVTarget.flags`              |
 
 `flags` bit0 = `FLAG_LEAD_APPLIED` (`x/y/z` already includes the intercept
 solve), bit1 = `FLAG_TRACK_VALID` (backed by a converged `target_tracker`
-estimate rather than a raw panel position), bit2 = `FLAG_FIRE`, bits 3-7
-reserved, 0. The bridge copies the byte as is.
+estimate rather than a raw panel position), bit2 = `FLAG_FIRE`, bit3 =
+`FLAG_TARGET` (`x/y/z` is an aim point; clear means no target, so the MCB
+patrols), bits 4-7 reserved, 0. The bridge copies the byte as is. No
+confidence crosses the wire: the Jetson decides aim and fire itself.
 
 `stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
 clocks are not synced, so it is **delta-only**: the MCB compares consecutive
@@ -215,7 +216,8 @@ travelling between `thornbots_pkg` and the CV pipeline.
 
 `FireCommand` is gone as of 2026-09-20: it was merged into `CVTarget` as
 `fire` + `delay_ms`, and `CV_MSG` (id=1) grew `stamp_ms` so the delay has a
-reference the MCB can age. `CVDataPayload` went 17 → 23 bytes; the layout and
+reference the MCB can age. `CVDataPayload` went 17 → 23 bytes, then 19 on
+2026-10-02 when `confidence` gave way to `FLAG_TARGET`; the layout and
 the delta-only reading of `stamp_ms` are in the CV_MSG section above.
 
 Same two-repos-one-change rule as every other wire edit; see README.md's "MCB

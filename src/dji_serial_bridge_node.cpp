@@ -734,7 +734,6 @@ private:
     p.x = msg->x;
     p.y = msg->y;
     p.z = msg->z;
-    p.confidence = msg->confidence;
     p.delay_ms = msg->delay_ms;
     p.flags = msg->flags;
 
