@@ -91,12 +91,13 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 2   | `turn_to_hit`         | the MCB may turn toward where it got hit         |
 
 Bits 3-7 are reserved, sent as 0. The bridge packs the byte from
-`CVTarget`'s booleans, as it unpacks REF_SYS's. Bits 1 and 2 only reach
-the MCB while there is a target, since no frame is sent without one; what
-the MCB does with them between frames is its call.
-Every frame is an aim point: the Jetson decides aim and fire itself, sends
-nothing while it has no target, and the MCB moves the gimbal only on these
-frames.
+`CVTarget`'s booleans, as it unpacks REF_SYS's. Bits 1 and 2 reach
+the MCB with every frame.
+Every frame is an aim point: the Jetson decides aim and fire itself, and
+the MCB moves the gimbal only on these frames. With no target the Jetson
+patrols, sending points to sweep the gun with `fire` clear
+(`thornbots_pkg` `patrol_enabled`, on by default). With that off it sends
+nothing between targets.
 
 `stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
 clocks are not synced, so it is **delta-only**: the MCB compares consecutive

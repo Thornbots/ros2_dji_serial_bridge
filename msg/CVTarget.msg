@@ -7,7 +7,7 @@
 # x/y/z is a WORLD-FRAME POSITION in odom (REP-105; z up), the frame of
 # POSE's x/y. Not a root- or camera-frame offset and not a barrel
 # attitude: the MCB applies its own ballistics. Every message is an aim
-# point; with no target none is sent and the MCB holds still.
+# point; with no target it's a patrol point with fire clear, or none.
 
 std_msgs/Header header       # stamp = decision time, wire stamp_ms; frame_id = odom
 float32 x                    # aim point, odom x (m)
