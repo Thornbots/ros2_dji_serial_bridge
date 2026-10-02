@@ -27,7 +27,7 @@ emulator"). Paths are under `MCB-project/src/`. Each line is a firmware-side
 fix before the match test's E2 can score:
 
 1. **`CV_MSG` is refused.** `CVData` is 40 bytes (x, y, z, v, a,
-   confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 23, and
+   confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 19, and
    `getMsg` drops any size mismatch (`JetsonSubsystem.hpp:204`). The gimbal
    never sees a target.
 2. **`x/y/z` is a camera-frame point there**: x right, y up, z forward, plus
