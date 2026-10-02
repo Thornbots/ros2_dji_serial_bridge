@@ -84,8 +84,16 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 16  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
 | 18  | 1    | uint8   | `flags`      | packed booleans, below        |
 
-`flags` bit0 = `fire` (`CVTarget.fire`), bits 1-7 reserved, sent as 0. The
-bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS's.
+| Bit | `CVTarget` field      | Set means                                        |
+|-----|-----------------------|--------------------------------------------------|
+| 0   | `fire`                | fire this aim point `delay_ms` after receipt     |
+| 1   | `type_c_based_patrol` | the MCB may patrol on its own; clear stops it    |
+| 2   | `turn_to_hit`         | the MCB may turn toward where it got hit         |
+
+Bits 3-7 are reserved, sent as 0. The bridge packs the byte from
+`CVTarget`'s booleans, as it unpacks REF_SYS's. Bits 1 and 2 only reach
+the MCB while there is a target, since no frame is sent without one; what
+the MCB does with them between frames is its call.
 Every frame is an aim point: the Jetson decides aim and fire itself, sends
 nothing while it has no target, and the MCB moves the gimbal only on these
 frames.
