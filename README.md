@@ -4,7 +4,7 @@ ROS 2 node bridging the DJI-framed UART protocol spoken by the MCB (main
 control board) with ROS 2 topics.
 
 **Wire formats: [`UART_PROTOCOL.md`](UART_PROTOCOL.md)** — frame layout, all
-five message IDs, byte tables both directions, REF_SYS bits, POSE odom
+six message IDs, byte tables both directions, REF_SYS bits, POSE odom
 status codes. Read it before touching `dji_protocol.hpp` or any `msg/` file
 that crosses the link.
 
@@ -71,6 +71,9 @@ items 2-4 stay:
     it, and the sentry's switch schedules `SimpleAutoDriveCommand`
     (`robots/sentry/SentryControl.hpp:61`, `:191-192`), a fixed waypoint route.
 13. **`seq` is always 0** on frames it sends (`UARTCommunication.cpp:21`).
+14. **`BYTE` (id=5) is not in the firmware yet** (added here 2026-10-03): it
+    needs `struct McbByte { uint8_t data; } modm_packed;` and a
+    `StructToMessageType` entry in `JetsonSubsystem.hpp`.
 
 Proposed, not applied: **`POSE` (id=2) chassis yaw** (2026-09-29), two
 trailing floats taking it 25 → 33 bytes, in `UART_PROTOCOL.md`. Until both
@@ -78,8 +81,8 @@ sides agree, `RobotPose.chassis_yaw` and `chassis_yaw_rate` read 0.
 
 ## Topics
 
-Five, one per message ID: `~/nav_goal`, `~/cv_target`, `~/pose`, `~/ref_sys`,
-`~/relocalize`. Types and directions are in the summary table in
+One per message ID, two for `BYTE`: `~/nav_goal`, `~/cv_target`, `~/pose`,
+`~/ref_sys`, `~/relocalize`, `~/byte_to_mcb`, `~/byte_from_mcb`. Types and directions are in the summary table in
 `UART_PROTOCOL.md`. They live in the node's private namespace, so `~/nav_goal`
 is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 

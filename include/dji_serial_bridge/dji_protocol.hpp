@@ -38,6 +38,7 @@ enum class McbMsgType : uint16_t
   POSE       = 2,    // MCB → Jetson : ~/pose        (PosePayload)
   REF_SYS    = 3,    // MCB → Jetson : ~/ref_sys     (RefSysPayload)
   RELOCALIZE = 4,    // Jetson → MCB : ~/relocalize  (RelocalizePayload)
+  BYTE       = 5,    // both ways    : ~/byte_to_mcb, ~/byte_from_mcb  (BytePayload)
 };
 
 // ─── DJI wire header  (exactly 7 bytes) ─────────────────────────────────────
@@ -129,3 +130,14 @@ struct __attribute__((packed)) RelocalizePayload
   float y;
 };
 static_assert(sizeof(RelocalizePayload) == 8, "RelocalizePayload size mismatch");
+
+// ─── Either direction ────────────────────────────────────────────────────────
+
+// BYTE (id=5) — one raw byte, Jetson → MCB from ~/byte_to_mcb and
+// MCB → Jetson on ~/byte_from_mcb (both McbByte). Meaning is up to the
+// sender and receiver. Mirror of struct McbByte in JetsonSubsystem.hpp.
+struct __attribute__((packed)) BytePayload
+{
+  uint8_t data;
+};
+static_assert(sizeof(BytePayload) == 1, "BytePayload size mismatch");
