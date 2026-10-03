@@ -58,8 +58,9 @@ items 2-4 stay:
 8. **`head_yaw` is `[0, 2pi)`, zero at IMU boot** (`MahonyAHRS.h:75-78`
    in taproot, via `GimbalSubsystem.cpp:41`), and counter-clockwise if the
    firmware's own aim math is self-consistent (`JetsonSubsystem.cpp:92`
-   against `:255`). Our URDF turns `headlink` about -z. Unverified on the
-   robot: check the sign before trusting `root->camera`.
+   against `:255`). Confirmed on the sentry 2026-10-03 (bag run00029: a
+   hand turn CCW raised it). Our URDF turns `headlink` about +z to match;
+   it turned about -z before that date, which mirrored `root->camera`.
 9. **`odom_status` is always `ODOM_PODS`** (`JetsonSubsystem.cpp:53`).
 10. **`delta_angle_got_hit_in` is 123 when not hit**, `HitRing::PLACEHOLDER_ANGLE`
     (`subsystems/ui/objects/HitRing.hpp:99`), not documented here.
