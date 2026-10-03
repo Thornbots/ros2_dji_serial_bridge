@@ -31,14 +31,14 @@ and 5; it takes `CV_TARGET` frames but doesn't aim or fire on them yet, so
 items 2-4 stay:
 
 1. **`CV_TARGET` is refused** (fixed in MCBV3#74). `CVData` is 40 bytes (x, y, z, v, a,
-   confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 19, and
+   confidence; `subsystems/jetson/JetsonSubsystem.hpp:60-73`), ours 15, and
    `getMsg` drops any size mismatch (`JetsonSubsystem.hpp:204`). The gimbal
    never sees a target.
 2. **`x/y/z` is a camera-frame point there**: x right, y up, z forward, plus
    the camera offsets, turned to the world by its own IMU yaw and pitch
    (`JetsonSubsystem.cpp:186-233`, offsets `JetsonSubsystemConstants.hpp:44-46`).
    We send an `odom` point.
-3. **No `stamp_ms`, `delay_ms`, `flags` or `fire`.** It fires by its own
+3. **No `delay_ms`, `flags` or `fire`.** It fires by its own
    rule: from the first frame within 60 deg of the gun (`JetsonSubsystem.cpp:268`)
    at indexer rate 10 (`AutoAimAndFireCommand.cpp:112`) until it patrols.
 4. **It leads the target itself**, ballistics at 24 m/s on its own velocity

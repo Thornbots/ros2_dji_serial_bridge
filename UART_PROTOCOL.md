@@ -33,7 +33,7 @@ retransmission, acknowledgement or flow control in either direction.
 | ID | Name         | Direction     | Payload struct      | Bytes | ROS topic      | ROS type                             | Rate          |
 |----|--------------|---------------|---------------------|-------|----------------|--------------------------------------|---------------|
 | 0  | `NAV_GOAL`   | Jetson → MCB  | `NavGoalPayload`    | 8     | `~/nav_goal`   | `geometry_msgs/msg/PointStamped`     | on publish    |
-| 1  | `CV_TARGET`  | Jetson → MCB  | `CvTargetPayload`   | 19    | `~/cv_target`  | `dji_serial_bridge/msg/CVTarget`     | on publish    |
+| 1  | `CV_TARGET`  | Jetson → MCB  | `CvTargetPayload`   | 15    | `~/cv_target`  | `dji_serial_bridge/msg/CVTarget`     | on publish    |
 | 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 100 Hz        |
 | 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz         |
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
@@ -72,17 +72,16 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 
 ### CV_TARGET (id=1) — aim point and fire decision
 
-19-byte payload, 28-byte frame. Subscribed on `~/cv_target`
+15-byte payload, 24-byte frame. Subscribed on `~/cv_target`
 (`dji_serial_bridge/msg/CVTarget`, SensorDataQoS, best-effort).
 
 | Off | Size | Type    | Field        | From                          |
 |-----|------|---------|--------------|-------------------------------|
-| 0   | 4    | uint32  | `stamp_ms`   | `CVTarget.header.stamp`, ms   |
-| 4   | 4    | float32 | `x`          | `CVTarget.x`                  |
-| 8   | 4    | float32 | `y`          | `CVTarget.y`                  |
-| 12  | 4    | float32 | `z`          | `CVTarget.z`                  |
-| 16  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
-| 18  | 1    | uint8   | `flags`      | packed booleans, below        |
+| 0   | 4    | float32 | `x`          | `CVTarget.x`                  |
+| 4   | 4    | float32 | `y`          | `CVTarget.y`                  |
+| 8   | 4    | float32 | `z`          | `CVTarget.z`                  |
+| 12  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
+| 14  | 1    | uint8   | `flags`      | packed booleans, below        |
 
 | Bit | `CVTarget` field      | Set means                                        |
 |-----|-----------------------|--------------------------------------------------|
@@ -99,11 +98,8 @@ patrols, sending points to sweep the gun with `fire` clear
 (`thornbots_pkg` `patrol_enabled`, on by default). With that off it sends
 nothing between targets.
 
-`stamp_ms` is the low 32 bits of `header.stamp` in milliseconds. The two
-clocks are not synced, so it is **delta-only**: the MCB compares consecutive
-frames to age the point, and runs `delay_ms` from frame receipt rather than
-from an absolute time. The 32-bit field wraps every ~49.7 days, which a
-delta reading survives.
+No stamp crosses the wire (dropped 2026-10-03 to match the firmware's
+15-byte `CvTarget`): the MCB runs `delay_ms` from frame receipt.
 
 Aim and fire travel as one frame on purpose. A fire delay is only meaningful
 against the aim point it was solved for; two frames could arrive apart, drop
@@ -226,10 +222,10 @@ The node unpacks the byte into the eight named booleans.
 travelling between `thornbots_pkg` and the CV pipeline.
 
 `FireCommand` is gone as of 2026-09-20: it was merged into `CVTarget` as
-`fire` + `delay_ms`, and `CV_TARGET` (id=1) grew `stamp_ms` so the delay has a
-reference the MCB can age. `CvTargetPayload` went 17 → 23 bytes, then 19 on
-2026-10-02 when `confidence` went (every frame is an aim point); the layout and
-the delta-only reading of `stamp_ms` are in the CV_TARGET section above.
+`fire` + `delay_ms`, and `CV_TARGET` (id=1) grew `stamp_ms` so the delay had a
+reference the MCB could age. `CvTargetPayload` went 17 → 23 bytes, then 19 on
+2026-10-02 when `confidence` went (every frame is an aim point), then 15 on
+2026-10-03 when `stamp_ms` went to match the firmware's `CvTarget`.
 
 Same two-repos-one-change rule as every other wire edit; see README.md's "MCB
 firmware coordination".
