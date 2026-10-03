@@ -40,10 +40,10 @@ retransmission, acknowledgement or flow control in either direction.
 | 5  | `BYTE`       | both          | `BytePayload`       | 1     | `~/byte_to_mcb`, `~/byte_from_mcb` | `dji_serial_bridge/msg/McbByte` | on publish / on send |
 
 Each message is named after its topic, and its payload fields after the ROS
-fields they carry. IDs match `enum UartMessage` in the firmware's
-`JetsonSubsystem.hpp`. At MCBV3 `708b8d6` it still uses the old names
-(`ROS_MSG`, `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`); Thornbots/MCBV3#74 (open)
-takes these names and layouts. Topics are in the node's private
+fields they carry. IDs 0-4 match `enum UartMessage` in the firmware's
+`JetsonSubsystem.hpp` on branch `uart-names-from-ros-topics`
+(Thornbots/MCBV3#74); MCBV3 `708b8d6` used the old names (`ROS_MSG`,
+`CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`). Topics are in the node's private
 namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
 
 An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
@@ -99,8 +99,8 @@ patrols, sending points to sweep the gun with `fire` clear
 (`thornbots_pkg` `patrol_enabled`, on by default). With that off it sends
 nothing between targets.
 
-No stamp crosses the wire (dropped 2026-10-03 to match the firmware's
-15-byte `CvTarget`): the MCB runs `delay_ms` from frame receipt.
+No stamp crosses the wire (dropped 2026-10-03 to match MCBV3
+`position-based-cv`'s 15-byte `CvTarget`): the MCB runs `delay_ms` from frame receipt.
 
 Aim and fire travel as one frame on purpose. A fire delay is only meaningful
 against the aim point it was solved for; two frames could arrive apart, drop
@@ -231,7 +231,7 @@ MCB → Jetson: published on `~/byte_from_mcb`, stamped like POSE. Both
 | 0   | 1    | uint8   | `data` | `McbByte.data` |
 
 The bridge gives the byte no meaning: sender and receiver agree on it.
-Not in the firmware yet (README.md, firmware item 14).
+Not in the firmware yet (README.md, firmware item 12).
 
 ---
 
@@ -244,7 +244,7 @@ travelling between `thornbots_pkg` and the CV pipeline.
 `fire` + `delay_ms`, and `CV_TARGET` (id=1) grew `stamp_ms` so the delay had a
 reference the MCB could age. `CvTargetPayload` went 17 → 23 bytes, then 19 on
 2026-10-02 when `confidence` went (every frame is an aim point), then 15 on
-2026-10-03 when `stamp_ms` went to match the firmware's `CvTarget`.
+2026-10-03 when `stamp_ms` went to match `position-based-cv`'s `CvTarget`.
 
 Same two-repos-one-change rule as every other wire edit; see README.md's "MCB
 firmware coordination".
