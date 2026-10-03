@@ -15,7 +15,7 @@
 // dji_serial_bridge_node.cpp
 //
 // ROS 2 node that bridges the Jetson-side DJI-framed UART protocol (MCB)
-// with ROS topics, handling all five message types defined in
+// with ROS topics, handling all six message types defined in
 // JetsonSubsystem.hpp. Topics live in the node's private namespace
 // (e.g. ~/nav_goal), so remap them in a launch file as needed.
 // Parameters are in config/dji_bridge_params.yaml.
@@ -41,6 +41,7 @@
 #include <geometry_msgs/msg/point_stamped.hpp>
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
+#include "dji_serial_bridge/msg/mcb_byte.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
 #include "dji_serial_bridge/msg/ref_sys_status.hpp"
 
@@ -168,9 +169,10 @@ public:
             "~/pose", rclcpp::SensorDataQoS());
     ref_sys_pub_ = create_publisher<dji_serial_bridge::msg::RefSysStatus>(
             "~/ref_sys", rclcpp::SensorDataQoS());
+    byte_pub_ = create_publisher<dji_serial_bridge::msg::McbByte>("~/byte_from_mcb", 10);
 
     RCLCPP_INFO(get_logger(),
-                    "Publishers ready:  ~/pose  ~/ref_sys");
+                    "Publishers ready:  ~/pose  ~/ref_sys  ~/byte_from_mcb");
 
     // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
     using std::placeholders::_1;
@@ -187,8 +189,12 @@ public:
             "~/relocalize", 10,
             std::bind(&DjiSerialBridge::relocalize_callback, this, _1));
 
+    byte_sub_ = create_subscription<dji_serial_bridge::msg::McbByte>(
+            "~/byte_to_mcb", 10,
+            std::bind(&DjiSerialBridge::byte_callback, this, _1));
+
     RCLCPP_INFO(get_logger(),
-                    "Subscribers ready: ~/nav_goal  ~/cv_target  ~/relocalize");
+                    "Subscribers ready: ~/nav_goal  ~/cv_target  ~/relocalize  ~/byte_to_mcb");
 
     // ── Diagnostic timer ──────────────────────────────────────────────────
     // Fires every diag_interval_s seconds and prints a stats summary so you
@@ -239,6 +245,8 @@ private:
   std::atomic<uint64_t> nav_goal_msgs_tx_{0};
   std::atomic<uint64_t> cv_target_msgs_tx_{0};
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
+  std::atomic<uint64_t> byte_msgs_pub_{0};
+  std::atomic<uint64_t> byte_msgs_tx_{0};
   // Last chassis pose received from the MCB (via POSE / ~/pose). Cached so
   // relocalize_callback can log the coordinate being overwritten. Written on
   // the serial read thread, read on the executor thread — hence atomic.
@@ -264,6 +272,8 @@ private:
     const uint64_t ng = nav_goal_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t cv = cv_target_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t rl = relocalize_msgs_tx_.load(std::memory_order_relaxed);
+    const uint64_t bpub = byte_msgs_pub_.load(std::memory_order_relaxed);
+    const uint64_t btx = byte_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t sil = silent_polls_.load(std::memory_order_relaxed);
 
     // Pick a severity level depending on whether anything is flowing
@@ -274,10 +284,10 @@ private:
                         "     Check: cable connected? MCB powered? baud rate matches?\n"
                         "     silent_polls=%lu  (each poll_ms timeout = no data arriving)\n"
                         "  RX  bytes=0  frames=0  crc8_err=0  crc16_err=0\n"
-                        "  PUB pose=0  ref_sys=0\n"
-                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu\n"
+                        "  PUB pose=0  ref_sys=0  byte=0\n"
+                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  byte=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        sil, ng, cv, rl);
+                        sil, ng, cv, rl, btx);
     } else if (frx == 0 && brx > 0) {
       RCLCPP_WARN(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
@@ -285,18 +295,18 @@ private:
                         "     Check: baud rate, frame head (0xA5), CRC settings\n"
                         "     crc8_err=%lu  crc16_err=%lu\n"
                         "  RX  bytes=%lu  frames=0\n"
-                        "  PUB pose=0  ref_sys=0\n"
-                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu\n"
+                        "  PUB pose=0  ref_sys=0  byte=0\n"
+                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  byte=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, c8, c16, brx, ng, cv, rl);
+                        brx, c8, c16, brx, ng, cv, rl, btx);
     } else {
       RCLCPP_INFO(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
                         "  ✓ RX  bytes=%lu  frames=%lu  crc8_err=%lu  crc16_err=%lu\n"
-                        "  ✓ PUB pose=%lu  ref_sys=%lu\n"
-                        "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu\n"
+                        "  ✓ PUB pose=%lu  ref_sys=%lu  byte=%lu\n"
+                        "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  byte=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, frx, c8, c16, pose, ref, ng, cv, rl);
+                        brx, frx, c8, c16, pose, ref, bpub, ng, cv, rl, btx);
     }
   }
 
@@ -562,6 +572,9 @@ private:
       case McbMsgType::REF_SYS:
         handle_ref_sys(payload, len, stamp);
         break;
+      case McbMsgType::BYTE:
+        handle_byte(payload, len, stamp);
+        break;
       default:
         RCLCPP_WARN(get_logger(),
                         "Unexpected inbound msgType=%u (len=%u) — ignoring", msg_type, len);
@@ -701,6 +714,25 @@ private:
     ref_sys_pub_->publish(msg);
   }
 
+  void handle_byte(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
+  {
+    if (len != sizeof(BytePayload)) {
+      RCLCPP_WARN(get_logger(),
+                        "BYTE: unexpected payload length %u (expected %zu)",
+                        len, sizeof(BytePayload));
+      return;
+    }
+
+    auto msg = dji_serial_bridge::msg::McbByte{};
+    msg.header.stamp = stamp;
+    msg.data = payload[0];
+    byte_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
+    if (debug_log_) {
+      RCLCPP_INFO(get_logger(), "[byte RX] 0x%02x (%u)", msg.data, msg.data);
+    }
+    byte_pub_->publish(msg);
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // Subscriber callbacks  (Jetson → MCB)
   // ═══════════════════════════════════════════════════════════════════════
@@ -774,6 +806,25 @@ private:
     }
   }
 
+  // The wire carries no stamp, so the header stops here.
+  void byte_callback(const dji_serial_bridge::msg::McbByte::SharedPtr msg)
+  {
+    BytePayload p{};
+    p.data = msg->data;
+
+    const bool ok = send_frame(McbMsgType::BYTE,
+                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+    if (ok) {
+      byte_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+      if (debug_log_) {
+        RCLCPP_INFO(get_logger(), "[byte TX] 0x%02x (%u)", p.data, p.data);
+      }
+    } else {
+      RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
+                                  "Failed to send BYTE");
+    }
+  }
+
   // ═══════════════════════════════════════════════════════════════════════
   // Member variables
   // ═══════════════════════════════════════════════════════════════════════
@@ -790,10 +841,12 @@ private:
 
   rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr pose_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
+  rclcpp::Publisher<dji_serial_bridge::msg::McbByte>::SharedPtr byte_pub_;
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr relocalize_sub_;
+  rclcpp::Subscription<dji_serial_bridge::msg::McbByte>::SharedPtr byte_sub_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

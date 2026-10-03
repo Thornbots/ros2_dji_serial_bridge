@@ -1,7 +1,7 @@
 # ros2_dji_serial_bridge: agent notes
 
 C++ node bridging the MCB's DJI-framed UART protocol to ROS 2 topics. Every
-wire format is in `UART_PROTOCOL.md`: frame layout, all five message IDs, the
+wire format is in `UART_PROTOCOL.md`: frame layout, all six message IDs, the
 byte tables both directions, `REF_SYS` bits, `POSE` odom status codes.
 Read it before touching any struct or any `msg/` file that crosses the link.
 `README.md` keeps the topic list, parameters, diagnostics, and the MCB
