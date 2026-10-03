@@ -10,10 +10,10 @@ float32 y          # chassis Y position  (odometry, metres)
 float32 vel_x      # chassis X velocity  (m/s)
 float32 vel_y      # chassis Y velocity  (m/s)
 float32 head_pitch # gimbal pitch angle  (radians, encoder value)
-float32 head_yaw   # gimbal yaw angle relative to world (radians)
+float32 head_yaw   # gimbal yaw relative to world (radians), CCW-positive from above
 
 # Chassis heading in the world, same sense and zero as head_yaw (thornbots_pkg's
-# URDF turns both joints about -z). Not on the wire yet: 0 until the firmware
+# URDF turns both joints about +z). Not on the wire yet: 0 until the firmware
 # sends them (UART_PROTOCOL.md "Proposed: POSE chassis yaw").
 float32 chassis_yaw       # radians
 float32 chassis_yaw_rate  # rad/s
