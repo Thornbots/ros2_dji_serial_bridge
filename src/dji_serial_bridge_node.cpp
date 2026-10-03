@@ -725,12 +725,6 @@ private:
   void cv_target_callback(const dji_serial_bridge::msg::CVTarget::SharedPtr msg)
   {
     CvTargetPayload p{};
-    // Low 32 bits of the ROS stamp in ms: the MCB reads it delta-only
-    // (the clocks are not synced), so the ~49-day wrap is harmless.
-    const uint64_t stamp_ms =
-      static_cast<uint64_t>(msg->header.stamp.sec) * 1000ULL +
-      static_cast<uint64_t>(msg->header.stamp.nanosec) / 1000000ULL;
-    p.stamp_ms = static_cast<uint32_t>(stamp_ms & 0xFFFFFFFFULL);
     p.x = msg->x;
     p.y = msg->y;
     p.z = msg->z;

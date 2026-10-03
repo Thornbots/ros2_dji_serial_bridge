@@ -107,13 +107,10 @@ static_assert(sizeof(NavGoalPayload) == 8, "NavGoalPayload size mismatch");
 // x/y/z is a WORLD-FRAME POSITION in odom, POSE's frame (not a root- or
 // camera-frame offset, not a barrel attitude -- Type-C applies its own
 // ballistics on top).
-// stamp_ms is the Jetson clock in ms, low 32 bits: the two clocks are not
-// synced, so the MCB uses it delta-only (staleness between consecutive
-// frames) and runs delay_ms from frame receipt.
+// No stamp: the MCB runs delay_ms from frame receipt.
 // Mirror of struct CvTarget in the firmware's JetsonSubsystem.hpp.
 struct __attribute__((packed)) CvTargetPayload
 {
-  uint32_t stamp_ms;     // decision time, Jetson clock, delta-only
   float    x;            // position, odom x (metres)
   float    y;            // position, odom y (metres)
   float    z;            // position, odom z, up (metres)
@@ -121,7 +118,7 @@ struct __attribute__((packed)) CvTargetPayload
   uint8_t  flags;        // CVTarget booleans: bit0 fire, bit1 type_c_based_patrol,
                          // bit2 turn_to_hit, bits 3-7 reserved (0)
 };
-static_assert(sizeof(CvTargetPayload) == 19, "CvTargetPayload size mismatch");
+static_assert(sizeof(CvTargetPayload) == 15, "CvTargetPayload size mismatch");
 
 // RELOCALIZE (id=4) — lidar-estimated robot position from ~/relocalize
 // (PointStamped), sent back to the MCB so it can update its odometry origin.
