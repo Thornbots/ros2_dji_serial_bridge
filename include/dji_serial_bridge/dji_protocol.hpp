@@ -17,7 +17,7 @@
 // dji_protocol.hpp
 //
 // Packed struct definitions that mirror the wire layout used by the MCB
-// (JetsonSubsystem.hpp / type_c_serial_test.hpp). All multi-byte fields
+// (JetsonSubsystem.hpp). All multi-byte fields
 // are little-endian, matching the ARM Cortex-M running modm.
 // see UART_PROTOCOL.md for the frame diagram and every payload table
 
@@ -30,7 +30,7 @@ static constexpr uint8_t FRAME_HEAD = 0xA5;
 // ─── message IDs ─────────────────────────────────────────────────────────────
 // Named after the ROS topic each one carries. IDs must stay in sync with
 // enum UartMessage in JetsonSubsystem.hpp (old names at MCBV3 708b8d6; this
-// file's names in Thornbots/MCBV3#74).
+// file's names on its uart-names-from-ros-topics branch, Thornbots/MCBV3#74).
 enum class McbMsgType : uint16_t
 {
   NAV_GOAL   = 0,    // Jetson → MCB : ~/nav_goal    (NavGoalPayload)
@@ -58,7 +58,7 @@ static constexpr size_t CRC8_COVERAGE = offsetof(FrameHeader, crc8);  // == 4
 // ─── MCB → Jetson payloads ───────────────────────────────────────────────────
 
 // POSE (id=2) — sent at 100 Hz by the MCB, published on ~/pose (RobotPose).
-// Mirror of struct PoseData (modm_packed) in JetsonSubsystem.hpp.
+// Mirror of struct Pose (modm_packed) in JetsonSubsystem.hpp.
 // Trailing odom_status byte rides along with every pose rather than arriving
 // as its own message, so the verdict can never be newer or older than the
 // x/y it applies to. see UART_PROTOCOL.md for the status code table
@@ -77,7 +77,7 @@ static_assert(sizeof(PosePayload) == 25, "PosePayload size mismatch");
 
 // REF_SYS (id=3) — sent at ~5 Hz by the MCB, interleaved with POSE, published
 // on ~/ref_sys (RefSysStatus).
-// Mirror of struct RefSysMsg (modm_packed) in JetsonSubsystem.hpp.
+// Mirror of struct RefSys (modm_packed) in JetsonSubsystem.hpp.
 // Booleans byte bit layout (MSB first): see UART_PROTOCOL.md for the full
 // bit-to-flag table (team/health/zone RFIDs/power flags).
 struct __attribute__((packed)) RefSysPayload
@@ -94,7 +94,7 @@ static_assert(sizeof(RefSysPayload) == 11, "RefSysPayload size mismatch");
 // ─── Jetson → MCB payloads ───────────────────────────────────────────────────
 
 // NAV_GOAL (id=0) — navigation goal for the autonomous drive controller,
-// from ~/nav_goal (PointStamped). Mirror of struct ROSData in JetsonSubsystem.hpp.
+// from ~/nav_goal (PointStamped). Mirror of struct NavGoal in JetsonSubsystem.hpp.
 struct __attribute__((packed)) NavGoalPayload
 {
   float x;

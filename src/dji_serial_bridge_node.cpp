@@ -16,7 +16,7 @@
 //
 // ROS 2 node that bridges the Jetson-side DJI-framed UART protocol (MCB)
 // with ROS topics, handling all six message types defined in
-// JetsonSubsystem.hpp. Topics live in the node's private namespace
+// dji_protocol.hpp. Topics live in the node's private namespace
 // (e.g. ~/nav_goal), so remap them in a launch file as needed.
 // Parameters are in config/dji_bridge_params.yaml.
 // see UART_PROTOCOL.md for the wire formats, README.md for parameters
