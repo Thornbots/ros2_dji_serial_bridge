@@ -30,7 +30,8 @@ static constexpr uint8_t FRAME_HEAD = 0xA5;
 // ─── message IDs ─────────────────────────────────────────────────────────────
 // Named after the ROS topic each one carries. IDs must stay in sync with
 // enum UartMessage in JetsonSubsystem.hpp (old names at MCBV3 708b8d6; this
-// file's names on its uart-names-from-ros-topics branch, Thornbots/MCBV3#74).
+// file's names on its position-based-cv branch, Thornbots/MCBV3#74). Id 5 is
+// Ping there, which echoes it.
 enum class McbMsgType : uint16_t
 {
   NAV_GOAL   = 0,    // Jetson → MCB : ~/nav_goal    (NavGoalPayload)
@@ -135,7 +136,7 @@ static_assert(sizeof(RelocalizePayload) == 8, "RelocalizePayload size mismatch")
 
 // BYTE (id=5) — one raw byte, Jetson → MCB from ~/byte_to_mcb and
 // MCB → Jetson on ~/byte_from_mcb (both McbByte). Meaning is up to the
-// sender and receiver. Mirror of struct McbByte in JetsonSubsystem.hpp.
+// sender and receiver. Firmware: struct Ping { uint8_t number; }, echoed back.
 struct __attribute__((packed)) BytePayload
 {
   uint8_t data;

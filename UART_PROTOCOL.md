@@ -41,7 +41,7 @@ retransmission, acknowledgement or flow control in either direction.
 
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs 0-4 match `enum UartMessage` in the firmware's
-`JetsonSubsystem.hpp` on branch `uart-names-from-ros-topics`
+`JetsonSubsystem.hpp` on MCBV3's `position-based-cv` branch
 (Thornbots/MCBV3#74); MCBV3 `708b8d6` used the old names (`ROS_MSG`,
 `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`). Topics are in the node's private
 namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
@@ -231,7 +231,8 @@ MCB → Jetson: published on `~/byte_from_mcb`, stamped like POSE. Both
 | 0   | 1    | uint8   | `data` | `McbByte.data` |
 
 The bridge gives the byte no meaning: sender and receiver agree on it.
-Not in the firmware yet (README.md, firmware item 12).
+In the firmware at `position-based-cv` id 5 is `PING`, which echoes the byte
+back (README.md, firmware item 1).
 
 ---
 
