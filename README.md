@@ -17,22 +17,29 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
-### Asked of the firmware (2026-10-03)
+### Asked of the firmware (2026-10-04)
 
-Against `position-based-cv` `f835be1`, for the sentry's first shots. Sim's
-MCB emulator runs all three as `firmware_fixes` (default on).
+Against `position-based-cv` `0885a69`, for the sentry's first shots. The
+2026-10-03 asks were against `f835be1`; `1c2405c` since dropped the aim's
+`-PI/2`, so its yaw reads `CV_TARGET` as REP-105 already. Sim's MCB
+emulator still ports `f835be1` (`../sim/README.md` "MCB emulator").
 
-1. **The wire in REP-105.** In `JetsonSubsystem` only: `POSE` sends the
-   odometry's (x right, y forward) as `(y, -x)`, velocity the same;
-   `RELOCALIZE`, `CV_TARGET` and `NAV_GOAL` `(x, y)` arrive as `(-y, x)`.
-   Nothing else changes; `head_yaw` already matches.
-2. **Clamp `delay_ms - FIRING_LATENCY_TIME` at 0.** As `uint32` it wraps
-   under 5 ms and that shot never fires.
-3. **Pitch for `z` above the pitch pivot:** `solveForPitch` gets
-   `z - OFFSET_Z_ROBOT_TO_PITCH_PIVOT` (0.39 m). `z` is from the ground.
+1. **One frame for the aim: REP-105.** The aim's yaw (`AutoAimAndFireCommand.cpp:70-71`)
+   treats `x/y` as x forward, y left, but subtracts `odo->getX()/getY()`,
+   which are x right, y forward. Right only at the power-on spot. Subtract
+   `(odo->getY(), -odo->getX())` there; `POSE` sends `(y, -x)`, velocity the
+   same; `RELOCALIZE` and `NAV_GOAL` `(x, y)` arrive as `(-y, x)`. Don't
+   rotate `CV_TARGET`: that would now turn the aim 90 deg. `head_yaw` matches.
+2. **Pitch for `z` above the pitch pivot** (`:72`): `solveForPitch` gets
+   `z - OFFSET_Z_ROBOT_TO_PITCH_PIVOT` (0.39 m). `z` is from the ground, so
+   every shot aims 0.39 m high. `Reticle.hpp:329` already subtracts it.
+
+Dropped: clamping `delay_ms - FIRING_LATENCY_TIME` (`:57`, now 80 ms).
+Under 80 the `uint32` wraps, but `MilliTimeout` adds it to now in `uint32`
+too, so the shot fires on the next cycle, as a clamp would.
 
 Keep: firing on bit 0 alone, one pending shot that each fire frame
-restarts, aiming for 200 ms after the last frame.
+restarts, aiming for 200 ms after the last frame, patrolling only on bit 1.
 
 ### Where the firmware stands
 
@@ -43,11 +50,12 @@ fix before the match test's E2 can score. (`uart-names-from-ros-topics` at
 `47512cc` is older: its `CvTarget` still leads with a `uint32_t stamp_ms`,
 19 bytes, and `getMsg` would refuse our 15.)
 
-1. **`CV_TARGET` aims and fires, but in the MCB's odometry frame**
-   (`subsystems/jetson/AutoAimAndFireCommand.cpp:54-90`): the aim is
-   `x/y/z` minus `odo->getX()/getY()`, the shot goes `delay_ms` after receipt
-   less `FIRING_LATENCY_TIME` when flags bit 0 is set. That odometry is not
-   the Jetson's `odom` (item 3; AGENTS.md "Open").
+1. **`CV_TARGET` aims and fires, in two frames at once**
+   (`subsystems/jetson/AutoAimAndFireCommand.cpp:53-90`): yaw is
+   `atan2` of `x/y` minus `odo->getX()/getY()`, read as REP-105 while the
+   odometry is x right (item 3; "Asked" item 1). Pitch solves for `z` from
+   the pivot. The shot goes `delay_ms` after receipt less
+   `FIRING_LATENCY_TIME` (80 ms) when flags bit 0 is set.
 2. **`POSE` is 90 Hz and `REF_SYS` 10 Hz**, not 100 and 5: nine
    poses then one ref on one 10 ms timer (`JetsonSubsystem.cpp:27-65`); the
    200 ms ref timer (`JetsonSubsystem.hpp:137-138`) is unused.
