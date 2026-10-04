@@ -5,12 +5,14 @@
 # taken off.
 std_msgs/Header header
 
-float32 x          # chassis X position  (odometry, metres)
-float32 y          # chassis Y position  (odometry, metres)
+# x/y, velocity and head_yaw are in the field frame: REP-105, (0, 0) at the
+# field centre, x toward blue's base (UART_PROTOCOL.md).
+float32 x          # chassis X position  (metres)
+float32 y          # chassis Y position  (metres)
 float32 vel_x      # chassis X velocity  (m/s)
 float32 vel_y      # chassis Y velocity  (m/s)
 float32 head_pitch # gimbal pitch angle  (radians, encoder value)
-float32 head_yaw   # gimbal yaw relative to world (radians), CCW-positive from above
+float32 head_yaw   # gimbal yaw (radians), CCW-positive from above
 
 # Chassis heading in the world, same sense and zero as head_yaw (thornbots_pkg's
 # URDF turns both joints about +z). Not on the wire yet: 0 until the firmware

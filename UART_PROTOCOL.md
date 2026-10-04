@@ -49,6 +49,13 @@ namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
 Rates are the firmware's at `0885a69`: nine POSE then one REF_SYS on one
 10 ms timer.
 
+**The field frame.** Every x/y and yaw on the wire, both directions, is in
+one frame (MCBV3 branch `rep-105`): REP-105, z up, (0, 0) at the field
+centre, x toward blue's base, y left. The MCB boots at its team's start,
+red (-4.625, 0) facing +x, blue (4.625, 0) facing -x, and adds it to its
+odometry and IMU yaw (`OdometrySubsystemConstants.hpp`; not measured on
+the field). `0885a69` sends x right, y forward of its power-on spot instead.
+
 An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 
 ---
@@ -70,7 +77,7 @@ header are discarded.
 | 0   | 4    | float32 | `x`       | `point.x` |
 | 4   | 4    | float32 | `y`       | `point.y` |
 
-A field goal in the MCB's odometry frame, metres, consumed by its autonomous
+A goal in the field frame, metres, consumed by its autonomous
 drive controller. No publisher in this workspace: `mcb_relay` wires up
 `~/cv_target` and `~/relocalize` only.
 
@@ -111,11 +118,9 @@ independently, or pair up wrongly on the MCB and fire at a point the delay
 was never computed for. `delay_ms` = 0 with `fire` set means fire now;
 `fire` clear means `delay_ms` is meaningless.
 
-`x/y/z` is a world-frame position in metres: `odom` (REP-105, z up). The
-firmware aims at it less its odometry; while that odometry is x right
-(`0885a69`), `mcb_relay` shifts `x/y` by the difference (`mcb_x_right`,
-`../thornbots_pkg/README.md` "MCB axes"), so on the wire it isn't an
-`odom` point. The MCB holds the point with its IMU and
+`x/y/z` is a world-frame position in metres in the field frame, which is
+our `odom` (z up). The firmware aims at it less its odometry, in the same
+frame. The MCB holds the point with its IMU and
 odometry while the chassis moves and turns, then aims at it and applies its
 own gravity, drag and muzzle geometry. It is not a root- or camera-frame
 offset and not a barrel attitude. Velocity
@@ -156,12 +161,12 @@ before a read is not taken off.
 
 | Off | Size | Type    | Field         | Meaning                                  |
 |-----|------|---------|---------------|------------------------------------------|
-| 0   | 4    | float32 | `x`           | chassis X, odometry frame, metres        |
-| 4   | 4    | float32 | `y`          | chassis Y, odometry frame, metres        |
+| 0   | 4    | float32 | `x`           | chassis X, field frame, metres           |
+| 4   | 4    | float32 | `y`          | chassis Y, field frame, metres           |
 | 8   | 4    | float32 | `vel_x`      | chassis X velocity, m/s                  |
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
 | 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
-| 20  | 4    | float32 | `head_yaw`   | gimbal yaw, world, CCW, `[0, 2pi)`, rad  |
+| 20  | 4    | float32 | `head_yaw`   | gimbal yaw, field, CCW, `[0, 2pi)`, rad  |
 | 24  | 1    | uint8   | `odom_status`| which source produced x/y/vel, below     |
 
 | Code | `RobotPose` constant         | Source of `x/y/vel_x/vel_y`                  |
@@ -171,10 +176,10 @@ before a read is not taken off.
 | 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
 | 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
 
-`x/y` at `0885a69` is x right, y forward of the heading at power-on, not
-REP-105; `head_yaw` is zero at IMU boot. The firmware always sends
-`ODOM_PODS` today. README.md "Where the firmware stands" has the line refs.
-`thornbots_pkg` turns `x/y` and velocity into REP-105 (`mcb_x_right`).
+`x/y`, velocity and `head_yaw` are in the field frame (above). At
+`0885a69` they were x right, y forward of the power-on spot, and
+`head_yaw` zero at IMU boot. The firmware always sends `ODOM_PODS` today.
+README.md "Where the firmware stands" has the line refs.
 
 Code 2 means the fields have no source behind them. Codes 1 and 3 mean they
 are drivetrain-derived and drift under wheel slip. `head_pitch` and `head_yaw`

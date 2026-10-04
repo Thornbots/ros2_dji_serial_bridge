@@ -46,6 +46,13 @@ too, so the shot fires on the next cycle, as a clamp would.
 Keep: firing on bit 0 alone, one pending shot that each fire frame
 restarts, aiming for 200 ms after the last frame, patrolling only on bit 1.
 
+### MCBV3 `rep-105` (2026-10-04)
+
+Branch `rep-105` here goes with MCBV3 branch `rep-105` (`cf42375`), off
+`0885a69`. It does "Asked" item 1 and more: every x/y and yaw on the wire is
+the field frame (`UART_PROTOCOL.md`), so POSE item 3 and the `head_yaw` zero
+in item 4 below no longer hold there. Item 2 (pitch pivot) isn't in it.
+
 ### Where the firmware stands
 
 Read against `Thornbots/MCBV3` branch `position-based-cv` at `0885a69`

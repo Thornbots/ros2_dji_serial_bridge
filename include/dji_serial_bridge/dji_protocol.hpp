@@ -65,12 +65,12 @@ static constexpr size_t CRC8_COVERAGE = offsetof(FrameHeader, crc8);  // == 4
 // x/y it applies to. see UART_PROTOCOL.md for the status code table
 struct __attribute__((packed)) PosePayload
 {
-  float   x;             // chassis X  (odometry, metres)
-  float   y;             // chassis Y  (odometry, metres)
+  float   x;             // chassis X  (field frame, metres)
+  float   y;             // chassis Y  (field frame, metres)
   float   vel_x;         // chassis vX (m/s)
   float   vel_y;         // chassis vY (m/s)
   float   head_pitch;    // gimbal pitch encoder value (radians)
-  float   head_yaw;      // gimbal yaw relative to world (radians)
+  float   head_yaw;      // gimbal yaw, field frame (radians)
   uint8_t odom_status;   // odometry source: 0 pods, 1 drivetrain, 2 i2c dead
   // (no data), 3 i2c dead using drivetrain
 };
@@ -106,9 +106,9 @@ static_assert(sizeof(NavGoalPayload) == 8, "NavGoalPayload size mismatch");
 // CV_TARGET (id=1) — from ~/cv_target (CVTarget): aim point and fire decision
 // in one frame, so the delay can never pair with an aim point it was not
 // solved for.
-// x/y/z is a WORLD-FRAME POSITION in odom (not a root- or camera-frame
-// offset, not a barrel attitude -- Type-C applies its own ballistics on top).
-// mcb_relay shifts x/y while the MCB's odometry is x right (UART_PROTOCOL.md).
+// x/y/z is a WORLD-FRAME POSITION in odom, the field frame (not a root- or
+// camera-frame offset, not a barrel attitude -- Type-C applies its own
+// ballistics on top). Field frame: UART_PROTOCOL.md.
 // No stamp: the MCB runs delay_ms from frame receipt.
 // Mirror of struct CvTarget in the firmware's JetsonSubsystem.hpp.
 struct __attribute__((packed)) CvTargetPayload
