@@ -33,11 +33,12 @@ needs a rebuild.
 
 ## Open
 
-- **`CV_TARGET`'s `x/y/z` is our `odom`, shared only once POSE is REP-105.**
-  `mcb_relay` relocalizes the MCB onto `/localization/odom`, the same
-  `odom->root` the aim point is built in, so the gap is the MCB's drift since
-  the last RELOCALIZE. Until "Asked" item 1 lands, POSE's x right makes that
-  drift grow at sqrt(2) x speed (README.md). `../CV_SPLIT_PLAN.md` W.3.
+- **`CV_TARGET`'s `x/y/z` is our `odom`.** `mcb_relay` relocalizes the MCB
+  onto `/localization/odom`, the `odom->root` the aim point is built in, so
+  the gap is the MCB's drift since the last RELOCALIZE. While POSE is x
+  right, `thornbots_pkg`'s `mcb_x_right` converts POSE and RELOCALIZE and
+  shifts the aim point on the wire (`../thornbots_pkg/README.md` "MCB
+  axes"). Not run on the robot. `../CV_SPLIT_PLAN.md` W.3.
 
 ## Committing
 

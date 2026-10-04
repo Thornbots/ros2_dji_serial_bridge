@@ -111,8 +111,11 @@ independently, or pair up wrongly on the MCB and fire at a point the delay
 was never computed for. `delay_ms` = 0 with `fire` set means fire now;
 `fire` clear means `delay_ms` is meaningless.
 
-`x/y/z` is a world-frame position in metres: `odom` (REP-105, z up), the
-frame POSE's `x/y` are in. The MCB holds the point with its IMU and
+`x/y/z` is a world-frame position in metres: `odom` (REP-105, z up). The
+firmware aims at it less its odometry; while that odometry is x right
+(`0885a69`), `mcb_relay` shifts `x/y` by the difference (`mcb_x_right`,
+`../thornbots_pkg/README.md` "MCB axes"), so on the wire it isn't an
+`odom` point. The MCB holds the point with its IMU and
 odometry while the chassis moves and turns, then aims at it and applies its
 own gravity, drag and muzzle geometry. It is not a root- or camera-frame
 offset and not a barrel attitude. Velocity
@@ -171,6 +174,7 @@ before a read is not taken off.
 `x/y` at `0885a69` is x right, y forward of the heading at power-on, not
 REP-105; `head_yaw` is zero at IMU boot. The firmware always sends
 `ODOM_PODS` today. README.md "Where the firmware stands" has the line refs.
+`thornbots_pkg` turns `x/y` and velocity into REP-105 (`mcb_x_right`).
 
 Code 2 means the fields have no source behind them. Codes 1 and 3 mean they
 are drivetrain-derived and drift under wheel slip. `head_pitch` and `head_yaw`

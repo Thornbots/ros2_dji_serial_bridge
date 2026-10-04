@@ -31,13 +31,10 @@ Neither is in `0885a69` yet (re-read 2026-10-04).
    `(odo->getY(), -odo->getX())` there; `POSE` sends `(y, -x)`, velocity the
    same; `RELOCALIZE` and `NAV_GOAL` `(x, y)` arrive as `(-y, x)`. Don't
    rotate `CV_TARGET`: that would now turn the aim 90 deg. `head_yaw` matches.
-   Land both halves in one commit: either alone breaks the aim. Today
-   `pose_translator` reads POSE turned 90 deg, so on the sentry
-   (`use_rf2o:=true`) the EKF fuses rf2o's x/y with `/odom` velocity turned
-   90 deg, and `mcb_relay` sees the two drift apart at sqrt(2) x distance:
-   while moving and confident it relocalizes every 0.3 s (`hold_off_s`),
-   and the MCB drifts up to ~0.4 m at 1 m/s in between. With raw `/odom`
-   passthrough the two turns cancel in `target - odo` and the aim is right.
+   Land both halves in one commit: either alone breaks the aim. Until
+   then `thornbots_pkg`'s `mcb_x_right` converts on the Jetson
+   (`../thornbots_pkg/README.md` "MCB axes"); the robot image that takes
+   the fixed firmware must run with it false, or the aim turns 90 deg.
 2. **Pitch for `z` above the pitch pivot** (`:72`): `solveForPitch` gets
    `z - OFFSET_Z_ROBOT_TO_PITCH_PIVOT` (0.39 m). `z` is from the ground, so
    every shot aims 0.39 m high. `Reticle.hpp:329` already subtracts it.
@@ -70,7 +67,7 @@ fix before the match test's E2 can score. (`uart-names-from-ros-topics` at
    200 ms ref timer (`JetsonSubsystem.hpp:137-138`) is unused.
 3. **`POSE` x/y is x right, y forward** of the heading at power-on
    (`subsystems/drivetrain/SimpleAutoDriveCommand.cpp:108`), not REP-105's x
-   forward, y left. `pose_translator` reads it as REP-105.
+   forward, y left. `thornbots_pkg` converts it (`mcb_x_right`).
 4. **`head_yaw` is `[0, 2pi)`, zero at IMU boot** (`MahonyAHRS.h:75-78`
    in taproot, via `GimbalSubsystem.cpp:41`), and counter-clockwise.
    Confirmed on the sentry 2026-10-03 (bag run00029: a hand turn CCW raised

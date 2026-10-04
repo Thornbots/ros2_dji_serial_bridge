@@ -106,9 +106,9 @@ static_assert(sizeof(NavGoalPayload) == 8, "NavGoalPayload size mismatch");
 // CV_TARGET (id=1) — from ~/cv_target (CVTarget): aim point and fire decision
 // in one frame, so the delay can never pair with an aim point it was not
 // solved for.
-// x/y/z is a WORLD-FRAME POSITION in odom, POSE's frame (not a root- or
-// camera-frame offset, not a barrel attitude -- Type-C applies its own
-// ballistics on top).
+// x/y/z is a WORLD-FRAME POSITION in odom (not a root- or camera-frame
+// offset, not a barrel attitude -- Type-C applies its own ballistics on top).
+// mcb_relay shifts x/y while the MCB's odometry is x right (UART_PROTOCOL.md).
 // No stamp: the MCB runs delay_ms from frame receipt.
 // Mirror of struct CvTarget in the firmware's JetsonSubsystem.hpp.
 struct __attribute__((packed)) CvTargetPayload
