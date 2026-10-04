@@ -37,7 +37,7 @@ retransmission, acknowledgement or flow control in either direction.
 | 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 100 Hz        |
 | 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz         |
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
-| 5  | `BYTE`       | both          | `BytePayload`       | 1     | `~/byte_to_mcb`, `~/byte_from_mcb` | `dji_serial_bridge/msg/McbByte` | on publish / on send |
+| 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs 0-4 match `enum UartMessage` in the firmware's
@@ -219,20 +219,17 @@ The node unpacks the byte into the eight named booleans.
 
 ## Either direction
 
-### BYTE (id=5) — one raw byte
+### PING (id=5) — link check, echoed by the MCB
 
 1-byte payload, 10-byte frame. The same ID both ways; the direction tells
-them apart. Jetson → MCB: subscribed on `~/byte_to_mcb`, header discarded.
-MCB → Jetson: published on `~/byte_from_mcb`, stamped like POSE. Both
-`dji_serial_bridge/msg/McbByte`, depth-10 reliable.
+them apart. Jetson → MCB: subscribed on `~/ping_to_mcb`, header discarded.
+The MCB sends every Ping it gets straight back (`JetsonSubsystem::refresh`);
+MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
+`dji_serial_bridge/msg/Ping`, depth-10 reliable.
 
-| Off | Size | Type    | Field  | From / to      |
-|-----|------|---------|--------|----------------|
-| 0   | 1    | uint8   | `data` | `McbByte.data` |
-
-The bridge gives the byte no meaning: sender and receiver agree on it.
-In the firmware at `position-based-cv` id 5 is `PING`, which echoes the byte
-back (README.md, firmware item 1).
+| Off | Size | Type    | Field    | From / to     |
+|-----|------|---------|----------|---------------|
+| 0   | 1    | uint8   | `number` | `Ping.number` |
 
 ---
 

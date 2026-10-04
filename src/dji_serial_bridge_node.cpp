@@ -41,7 +41,7 @@
 #include <geometry_msgs/msg/point_stamped.hpp>
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
-#include "dji_serial_bridge/msg/mcb_byte.hpp"
+#include "dji_serial_bridge/msg/ping.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
 #include "dji_serial_bridge/msg/ref_sys_status.hpp"
 
@@ -169,10 +169,10 @@ public:
             "~/pose", rclcpp::SensorDataQoS());
     ref_sys_pub_ = create_publisher<dji_serial_bridge::msg::RefSysStatus>(
             "~/ref_sys", rclcpp::SensorDataQoS());
-    byte_pub_ = create_publisher<dji_serial_bridge::msg::McbByte>("~/byte_from_mcb", 10);
+    ping_pub_ = create_publisher<dji_serial_bridge::msg::Ping>("~/ping_from_mcb", 10);
 
     RCLCPP_INFO(get_logger(),
-                    "Publishers ready:  ~/pose  ~/ref_sys  ~/byte_from_mcb");
+                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb");
 
     // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
     using std::placeholders::_1;
@@ -189,12 +189,12 @@ public:
             "~/relocalize", 10,
             std::bind(&DjiSerialBridge::relocalize_callback, this, _1));
 
-    byte_sub_ = create_subscription<dji_serial_bridge::msg::McbByte>(
-            "~/byte_to_mcb", 10,
-            std::bind(&DjiSerialBridge::byte_callback, this, _1));
+    ping_sub_ = create_subscription<dji_serial_bridge::msg::Ping>(
+            "~/ping_to_mcb", 10,
+            std::bind(&DjiSerialBridge::ping_callback, this, _1));
 
     RCLCPP_INFO(get_logger(),
-                    "Subscribers ready: ~/nav_goal  ~/cv_target  ~/relocalize  ~/byte_to_mcb");
+                    "Subscribers ready: ~/nav_goal  ~/cv_target  ~/relocalize  ~/ping_to_mcb");
 
     // ── Diagnostic timer ──────────────────────────────────────────────────
     // Fires every diag_interval_s seconds and prints a stats summary so you
@@ -245,8 +245,8 @@ private:
   std::atomic<uint64_t> nav_goal_msgs_tx_{0};
   std::atomic<uint64_t> cv_target_msgs_tx_{0};
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
-  std::atomic<uint64_t> byte_msgs_pub_{0};
-  std::atomic<uint64_t> byte_msgs_tx_{0};
+  std::atomic<uint64_t> ping_msgs_pub_{0};
+  std::atomic<uint64_t> ping_msgs_tx_{0};
   // Last chassis pose received from the MCB (via POSE / ~/pose). Cached so
   // relocalize_callback can log the coordinate being overwritten. Written on
   // the serial read thread, read on the executor thread — hence atomic.
@@ -272,8 +272,8 @@ private:
     const uint64_t ng = nav_goal_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t cv = cv_target_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t rl = relocalize_msgs_tx_.load(std::memory_order_relaxed);
-    const uint64_t bpub = byte_msgs_pub_.load(std::memory_order_relaxed);
-    const uint64_t btx = byte_msgs_tx_.load(std::memory_order_relaxed);
+    const uint64_t ppub = ping_msgs_pub_.load(std::memory_order_relaxed);
+    const uint64_t ptx = ping_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t sil = silent_polls_.load(std::memory_order_relaxed);
 
     // Pick a severity level depending on whether anything is flowing
@@ -284,10 +284,10 @@ private:
                         "     Check: cable connected? MCB powered? baud rate matches?\n"
                         "     silent_polls=%lu  (each poll_ms timeout = no data arriving)\n"
                         "  RX  bytes=0  frames=0  crc8_err=0  crc16_err=0\n"
-                        "  PUB pose=0  ref_sys=0  byte=0\n"
-                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  byte=%lu\n"
+                        "  PUB pose=0  ref_sys=0  ping=0\n"
+                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        sil, ng, cv, rl, btx);
+                        sil, ng, cv, rl, ptx);
     } else if (frx == 0 && brx > 0) {
       RCLCPP_WARN(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
@@ -295,18 +295,18 @@ private:
                         "     Check: baud rate, frame head (0xA5), CRC settings\n"
                         "     crc8_err=%lu  crc16_err=%lu\n"
                         "  RX  bytes=%lu  frames=0\n"
-                        "  PUB pose=0  ref_sys=0  byte=0\n"
-                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  byte=%lu\n"
+                        "  PUB pose=0  ref_sys=0  ping=0\n"
+                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, c8, c16, brx, ng, cv, rl, btx);
+                        brx, c8, c16, brx, ng, cv, rl, ptx);
     } else {
       RCLCPP_INFO(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
                         "  ✓ RX  bytes=%lu  frames=%lu  crc8_err=%lu  crc16_err=%lu\n"
-                        "  ✓ PUB pose=%lu  ref_sys=%lu  byte=%lu\n"
-                        "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  byte=%lu\n"
+                        "  ✓ PUB pose=%lu  ref_sys=%lu  ping=%lu\n"
+                        "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, frx, c8, c16, pose, ref, bpub, ng, cv, rl, btx);
+                        brx, frx, c8, c16, pose, ref, ppub, ng, cv, rl, ptx);
     }
   }
 
@@ -572,8 +572,8 @@ private:
       case McbMsgType::REF_SYS:
         handle_ref_sys(payload, len, stamp);
         break;
-      case McbMsgType::BYTE:
-        handle_byte(payload, len, stamp);
+      case McbMsgType::PING:
+        handle_ping(payload, len, stamp);
         break;
       default:
         RCLCPP_WARN(get_logger(),
@@ -714,23 +714,23 @@ private:
     ref_sys_pub_->publish(msg);
   }
 
-  void handle_byte(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
+  void handle_ping(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
-    if (len != sizeof(BytePayload)) {
+    if (len != sizeof(PingPayload)) {
       RCLCPP_WARN(get_logger(),
-                        "BYTE: unexpected payload length %u (expected %zu)",
-                        len, sizeof(BytePayload));
+                        "PING: unexpected payload length %u (expected %zu)",
+                        len, sizeof(PingPayload));
       return;
     }
 
-    auto msg = dji_serial_bridge::msg::McbByte{};
+    auto msg = dji_serial_bridge::msg::Ping{};
     msg.header.stamp = stamp;
-    msg.data = payload[0];
-    byte_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
+    msg.number = payload[0];
+    ping_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
     if (debug_log_) {
-      RCLCPP_INFO(get_logger(), "[byte RX] 0x%02x (%u)", msg.data, msg.data);
+      RCLCPP_INFO(get_logger(), "[ping RX] 0x%02x (%u)", msg.number, msg.number);
     }
-    byte_pub_->publish(msg);
+    ping_pub_->publish(msg);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -807,21 +807,21 @@ private:
   }
 
   // The wire carries no stamp, so the header stops here.
-  void byte_callback(const dji_serial_bridge::msg::McbByte::SharedPtr msg)
+  void ping_callback(const dji_serial_bridge::msg::Ping::SharedPtr msg)
   {
-    BytePayload p{};
-    p.data = msg->data;
+    PingPayload p{};
+    p.number = msg->number;
 
-    const bool ok = send_frame(McbMsgType::BYTE,
+    const bool ok = send_frame(McbMsgType::PING,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
     if (ok) {
-      byte_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+      ping_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
       if (debug_log_) {
-        RCLCPP_INFO(get_logger(), "[byte TX] 0x%02x (%u)", p.data, p.data);
+        RCLCPP_INFO(get_logger(), "[ping TX] 0x%02x (%u)", p.number, p.number);
       }
     } else {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
-                                  "Failed to send BYTE");
+                                  "Failed to send PING");
     }
   }
 
@@ -841,12 +841,12 @@ private:
 
   rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr pose_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
-  rclcpp::Publisher<dji_serial_bridge::msg::McbByte>::SharedPtr byte_pub_;
+  rclcpp::Publisher<dji_serial_bridge::msg::Ping>::SharedPtr ping_pub_;
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr relocalize_sub_;
-  rclcpp::Subscription<dji_serial_bridge::msg::McbByte>::SharedPtr byte_sub_;
+  rclcpp::Subscription<dji_serial_bridge::msg::Ping>::SharedPtr ping_sub_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

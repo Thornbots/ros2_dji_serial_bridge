@@ -20,7 +20,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PanelDetection.msg"
   "msg/PanelDetectionArray.msg"
   "msg/TargetState.msg"
-  "msg/McbByte.msg"
+  "msg/Ping.msg"
   DEPENDENCIES std_msgs geometry_msgs
 )
 

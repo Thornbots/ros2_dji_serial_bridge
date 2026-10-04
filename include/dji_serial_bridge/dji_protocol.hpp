@@ -39,7 +39,7 @@ enum class McbMsgType : uint16_t
   POSE       = 2,    // MCB → Jetson : ~/pose        (PosePayload)
   REF_SYS    = 3,    // MCB → Jetson : ~/ref_sys     (RefSysPayload)
   RELOCALIZE = 4,    // Jetson → MCB : ~/relocalize  (RelocalizePayload)
-  BYTE       = 5,    // both ways    : ~/byte_to_mcb, ~/byte_from_mcb  (BytePayload)
+  PING       = 5,    // both ways    : ~/ping_to_mcb, ~/ping_from_mcb  (PingPayload)
 };
 
 // ─── DJI wire header  (exactly 7 bytes) ─────────────────────────────────────
@@ -134,11 +134,10 @@ static_assert(sizeof(RelocalizePayload) == 8, "RelocalizePayload size mismatch")
 
 // ─── Either direction ────────────────────────────────────────────────────────
 
-// BYTE (id=5) — one raw byte, Jetson → MCB from ~/byte_to_mcb and
-// MCB → Jetson on ~/byte_from_mcb (both McbByte). Meaning is up to the
-// sender and receiver. Firmware: struct Ping { uint8_t number; }, echoed back.
-struct __attribute__((packed)) BytePayload
+// PING (id=5) — Jetson → MCB from ~/ping_to_mcb; the MCB echoes it back,
+// published on ~/ping_from_mcb (both Ping). Firmware: struct Ping.
+struct __attribute__((packed)) PingPayload
 {
-  uint8_t data;
+  uint8_t number;
 };
-static_assert(sizeof(BytePayload) == 1, "BytePayload size mismatch");
+static_assert(sizeof(PingPayload) == 1, "PingPayload size mismatch");

@@ -17,7 +17,7 @@ dji_bridge.launch.py — Launch the Jetson <-> ROS 2 serial bridge.
 
 dji_serial_bridge_node translates between the DJI-framed UART protocol and
 ROS topics for its six message types (nav_goal, cv_target, pose, ref_sys,
-relocalize, byte). It has no opinion on where those topics' other ends come
+relocalize, ping). It has no opinion on where those topics' other ends come
 from. Override parameters from the command line
 (e.g. device:=/dev/ttyUSB0); see README.md for a full example.
 """
