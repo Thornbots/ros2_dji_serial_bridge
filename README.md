@@ -17,6 +17,23 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
+### Asked of the firmware (2026-10-03)
+
+Against `position-based-cv` `f835be1`, for the sentry's first shots. Sim's
+MCB emulator runs all three as `firmware_fixes` (default on).
+
+1. **The wire in REP-105.** In `JetsonSubsystem` only: `POSE` sends the
+   odometry's (x right, y forward) as `(y, -x)`, velocity the same;
+   `RELOCALIZE`, `CV_TARGET` and `NAV_GOAL` `(x, y)` arrive as `(-y, x)`.
+   Nothing else changes; `head_yaw` already matches.
+2. **Clamp `delay_ms - FIRING_LATENCY_TIME` at 0.** As `uint32` it wraps
+   under 5 ms and that shot never fires.
+3. **Pitch for `z` above the pitch pivot:** `solveForPitch` gets
+   `z - OFFSET_Z_ROBOT_TO_PITCH_PIVOT` (0.39 m). `z` is from the ground.
+
+Keep: firing on bit 0 alone, one pending shot that each fire frame
+restarts, aiming for 200 ms after the last frame.
+
 ### Where the firmware stands
 
 Read against `Thornbots/MCBV3` branch `position-based-cv` at `0885a69`
