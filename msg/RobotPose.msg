@@ -1,5 +1,5 @@
 # Pose and velocity of the robot chassis plus gimbal angles.
-# Sent by the MCB at 100 Hz (POSE, id=2). header.stamp is when the MCB
+# Sent by the MCB at 90 Hz (POSE, id=2). header.stamp is when the MCB
 # started sending the frame: its last byte's read time less the frame's wire
 # time at the baud. No MCB clock crosses the wire, and USB latency isn't
 # taken off.

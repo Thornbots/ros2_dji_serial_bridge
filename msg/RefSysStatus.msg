@@ -1,4 +1,4 @@
-# Referee system status forwarded from the MCB at ~5 Hz, interleaved with
+# Referee system status forwarded from the MCB at 10 Hz, interleaved with
 # POSE (REF_SYS, id=3). header.stamp is when the MCB started
 # sending the frame, as in RobotPose.
 std_msgs/Header header
@@ -7,7 +7,7 @@ uint8  game_stage               # referee game stage enum value
 uint16 stage_time_remaining     # seconds remaining in current stage
 uint16 robot_hp                 # current robot HP
 uint8  robot_id                 # robot ID normalised to red-team numbering (hero=1)
-float32 delta_angle_got_hit_in  # angle from current heading at which last hit arrived (radians)
+float32 delta_angle_got_hit_in  # angle from current heading at which last hit arrived (radians); 123 = no hit since the last frame
 
 # Booleans unpacked from the single booleans byte.
 # Bit layout on the wire (MSB→LSB): blue|healing|reload|center|teamCenter|

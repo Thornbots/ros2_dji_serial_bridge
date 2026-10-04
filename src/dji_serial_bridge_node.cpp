@@ -627,7 +627,7 @@ private:
     // chassis_yaw/_rate stay 0 until POSE carries them (UART_PROTOCOL.md).
     msg.odom_status = raw.odom_status;
 
-    // Pose arrives at 100 Hz, so log the status byte only when it moves.
+    // Pose arrives at 90 Hz, so log the status byte only when it moves.
     const uint8_t prev_status =
       last_odom_status_.exchange(raw.odom_status, std::memory_order_relaxed);
     if (raw.odom_status != prev_status) {
@@ -698,7 +698,7 @@ private:
 
     // Log every ref_sys message received. debug_log_ is cached from the
     // parameter at construction -- this runs on the serial read thread at
-    // ~5 Hz, so don't do a parameter lookup per frame.
+    // 10 Hz, so don't do a parameter lookup per frame.
     if (debug_log_) {
       RCLCPP_INFO(get_logger(),
                         "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "

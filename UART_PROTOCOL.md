@@ -25,7 +25,8 @@ no padding.
 Header 7 bytes, trailer 2, frame size `payload + 9`. Payload offsets in the
 tables below are relative to the payload start; add 7 for the frame offset.
 
-`seq` increments per transmitted frame and is not checked on receive. No
+`seq` increments per transmitted frame and is not checked on receive. The
+MCB sends 0 on every frame (`UARTCommunication.cpp:21`). No
 retransmission, acknowledgement or flow control in either direction.
 
 ## Message types
@@ -34,17 +35,19 @@ retransmission, acknowledgement or flow control in either direction.
 |----|--------------|---------------|---------------------|-------|----------------|--------------------------------------|---------------|
 | 0  | `NAV_GOAL`   | Jetson → MCB  | `NavGoalPayload`    | 8     | `~/nav_goal`   | `geometry_msgs/msg/PointStamped`     | on publish    |
 | 1  | `CV_TARGET`  | Jetson → MCB  | `CvTargetPayload`   | 15    | `~/cv_target`  | `dji_serial_bridge/msg/CVTarget`     | on publish    |
-| 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 100 Hz        |
-| 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | ~5 Hz         |
+| 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 90 Hz         |
+| 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | 10 Hz         |
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 
 Each message is named after its topic, and its payload fields after the ROS
-fields they carry. IDs 0-4 match `enum UartMessage` in the firmware's
+fields they carry. IDs 0-5 match `enum UartMessage` in the firmware's
 `JetsonSubsystem.hpp` on MCBV3's `position-based-cv` branch
 (Thornbots/MCBV3#74); MCBV3 `708b8d6` used the old names (`ROS_MSG`,
 `CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`). Topics are in the node's private
 namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
+Rates are the firmware's at `0885a69`: nine POSE then one REF_SYS on one
+10 ms timer.
 
 An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 
@@ -145,7 +148,7 @@ before a read is not taken off.
 
 ### POSE (id=2) — chassis pose and gimbal angles
 
-25-byte payload, 34-byte frame, 100 Hz. Published on `~/pose`
+25-byte payload, 34-byte frame, 90 Hz. Published on `~/pose`
 (`dji_serial_bridge/msg/RobotPose`, SensorDataQoS).
 
 | Off | Size | Type    | Field         | Meaning                                  |
@@ -155,7 +158,7 @@ before a read is not taken off.
 | 8   | 4    | float32 | `vel_x`      | chassis X velocity, m/s                  |
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
 | 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
-| 20  | 4    | float32 | `head_yaw`   | gimbal yaw relative to world, radians    |
+| 20  | 4    | float32 | `head_yaw`   | gimbal yaw, world, CCW, `[0, 2pi)`, rad  |
 | 24  | 1    | uint8   | `odom_status`| which source produced x/y/vel, below     |
 
 | Code | `RobotPose` constant         | Source of `x/y/vel_x/vel_y`                  |
@@ -164,6 +167,10 @@ before a read is not taken off.
 | 1    | `ODOM_DRIVETRAIN`            | drivetrain odometry, degraded by wheel slip  |
 | 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
 | 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
+
+`x/y` at `0885a69` is x right, y forward of the heading at power-on, not
+REP-105; `head_yaw` is zero at IMU boot. The firmware always sends
+`ODOM_PODS` today. README.md "Where the firmware stands" has the line refs.
 
 Code 2 means the fields have no source behind them. Codes 1 and 3 mean they
 are drivetrain-derived and drift under wheel slip. `head_pitch` and `head_yaw`
@@ -190,7 +197,7 @@ joint only: `root` stays heading-fixed, so localization doesn't read it.
 
 ### REF_SYS (id=3) — referee system status
 
-11-byte payload, 20-byte frame, ~5 Hz, interleaved with POSE. Published on
+11-byte payload, 20-byte frame, 10 Hz, interleaved with POSE. Published on
 `~/ref_sys` (`dji_serial_bridge/msg/RefSysStatus`, SensorDataQoS).
 
 | Off | Size | Type    | Field                    | Meaning                                   |
@@ -199,7 +206,7 @@ joint only: `root` stays heading-fixed, so localization doesn't read it.
 | 1   | 2    | uint16  | `stage_time_remaining`   | seconds left in the current stage         |
 | 3   | 2    | uint16  | `robot_hp`               | current robot HP                          |
 | 5   | 1    | uint8   | `robot_id`               | normalised to red-team numbering (hero=1) |
-| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current heading of last hit  |
+| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current heading of last hit; 123 if none since last frame |
 | 10  | 1    | uint8   | `booleans`               | 8 flags, MSB first, table below           |
 
 | Bit | Firmware name            | `RefSysStatus` field       | Meaning                           |

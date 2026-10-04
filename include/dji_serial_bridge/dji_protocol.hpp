@@ -58,7 +58,7 @@ static constexpr size_t CRC8_COVERAGE = offsetof(FrameHeader, crc8);  // == 4
 
 // ─── MCB → Jetson payloads ───────────────────────────────────────────────────
 
-// POSE (id=2) — sent at 100 Hz by the MCB, published on ~/pose (RobotPose).
+// POSE (id=2) — sent at 90 Hz by the MCB, published on ~/pose (RobotPose).
 // Mirror of struct Pose (modm_packed) in JetsonSubsystem.hpp.
 // Trailing odom_status byte rides along with every pose rather than arriving
 // as its own message, so the verdict can never be newer or older than the
@@ -76,7 +76,7 @@ struct __attribute__((packed)) PosePayload
 };
 static_assert(sizeof(PosePayload) == 25, "PosePayload size mismatch");
 
-// REF_SYS (id=3) — sent at ~5 Hz by the MCB, interleaved with POSE, published
+// REF_SYS (id=3) — sent at 10 Hz by the MCB, interleaved with POSE, published
 // on ~/ref_sys (RefSysStatus).
 // Mirror of struct RefSys (modm_packed) in JetsonSubsystem.hpp.
 // Booleans byte bit layout (MSB first): see UART_PROTOCOL.md for the full

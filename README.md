@@ -23,6 +23,7 @@ Against `position-based-cv` `0885a69`, for the sentry's first shots. The
 2026-10-03 asks were against `f835be1`; `1c2405c` since dropped the aim's
 `-PI/2`, so its yaw reads `CV_TARGET` as REP-105 already. Sim's MCB
 emulator still ports `f835be1` (`../sim/README.md` "MCB emulator").
+Neither is in `0885a69` yet (re-read 2026-10-04).
 
 1. **One frame for the aim: REP-105.** The aim's yaw (`AutoAimAndFireCommand.cpp:70-71`)
    treats `x/y` as x forward, y left, but subtracts `odo->getX()/getY()`,
@@ -44,7 +45,8 @@ restarts, aiming for 200 ms after the last frame, patrolling only on bit 1.
 ### Where the firmware stands
 
 Read against `Thornbots/MCBV3` branch `position-based-cv` at `0885a69`
-(2026-10-03), the branch the sentry runs. It has our message names and
+(2026-10-03), the branch the sentry runs, and still the newest commit on any
+MCBV3 branch on 2026-10-04. It has our message names and
 layouts. Paths are under `MCB-project/src/`. Each line is a firmware-side
 fix before the match test's E2 can score. (`uart-names-from-ros-topics` at
 `47512cc` is older: its `CvTarget` still leads with a `uint32_t stamp_ms`,
@@ -56,7 +58,7 @@ fix before the match test's E2 can score. (`uart-names-from-ros-topics` at
    odometry is x right (item 3; "Asked" item 1). Pitch solves for `z` from
    the pivot. The shot goes `delay_ms` after receipt less
    `FIRING_LATENCY_TIME` (80 ms) when flags bit 0 is set.
-2. **`POSE` is 90 Hz and `REF_SYS` 10 Hz**, not 100 and 5: nine
+2. **`POSE` is 90 Hz and `REF_SYS` 10 Hz**: nine
    poses then one ref on one 10 ms timer (`JetsonSubsystem.cpp:27-65`); the
    200 ms ref timer (`JetsonSubsystem.hpp:137-138`) is unused.
 3. **`POSE` x/y is x right, y forward** of the heading at power-on
@@ -68,8 +70,8 @@ fix before the match test's E2 can score. (`uart-names-from-ros-topics` at
    it). Our URDF turns `headlink` about +z to match; it turned about -z
    before that date, which mirrored `root->camera`.
 5. **`odom_status` is always `ODOM_PODS`** (`JetsonSubsystem.cpp:39`).
-6. **`delta_angle_got_hit_in` is 123 when not hit**, `HitRing::PLACEHOLDER_ANGLE`
-   (`subsystems/ui/objects/HitRing.hpp:99`), not documented here.
+6. **`delta_angle_got_hit_in` is 123 when not hit** since the last `REF_SYS`,
+   `HitRing::PLACEHOLDER_ANGLE` (`subsystems/ui/objects/HitRing.hpp:99`).
 7. **One mailbox slot.** Each frame overwrites the last
    (`communication/UARTCommunication.cpp:37-44`, the TODO at `.hpp:61`), so a
    `RELOCALIZE` landing in the same 1 ms cycle as a `CV_TARGET` is lost.
@@ -135,4 +137,13 @@ python3 scripts/test_bridge.py                       # config + live check, 10s 
 python3 scripts/test_bridge.py --config-only         # config check, no ROS
 python3 scripts/test_bridge.py --timeout 30          # slow MCB startup
 python3 scripts/test_bridge.py --device /dev/ttyUSB0 --baudrate 115200
+
+python3 scripts/serial_debug.py /dev/ttyTHS1 --baud 115200         # raw hex dump, bridge stopped
+python3 scripts/serial_debug.py /dev/ttyTHS1 --baud 115200 --log rx.bin
 ```
+
+`test_bridge.py` waits for `~/pose` and `~/ref_sys` from a running bridge.
+`serial_debug.py` opens the port itself, so stop the bridge first; it
+defaults to 921600 baud, so always pass `--baud`. Its `--tx` sends a
+`RELOCALIZE` to (5, 3) every second, which moves the MCB's odometry origin:
+not on a robot that's driving.
