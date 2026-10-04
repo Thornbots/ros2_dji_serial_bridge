@@ -33,10 +33,11 @@ needs a rebuild.
 
 ## Open
 
-- **`CV_TARGET`'s `x/y/z` frame is documented, not settled.** The docs say
-  `odom`, POSE's frame, but the Jetson's `odom` is the localization
-  EKF's and RELOCALIZE moves the MCB's origin. `../CV_SPLIT_PLAN.md` W.3's
-  open issues.
+- **`CV_TARGET`'s `x/y/z` is our `odom`, shared only once POSE is REP-105.**
+  `mcb_relay` relocalizes the MCB onto `/localization/odom`, the same
+  `odom->root` the aim point is built in, so the gap is the MCB's drift since
+  the last RELOCALIZE. Until "Asked" item 1 lands, POSE's x right makes that
+  drift grow at sqrt(2) x speed (README.md). `../CV_SPLIT_PLAN.md` W.3.
 
 ## Committing
 

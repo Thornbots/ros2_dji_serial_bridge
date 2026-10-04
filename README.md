@@ -31,6 +31,13 @@ Neither is in `0885a69` yet (re-read 2026-10-04).
    `(odo->getY(), -odo->getX())` there; `POSE` sends `(y, -x)`, velocity the
    same; `RELOCALIZE` and `NAV_GOAL` `(x, y)` arrive as `(-y, x)`. Don't
    rotate `CV_TARGET`: that would now turn the aim 90 deg. `head_yaw` matches.
+   Land both halves in one commit: either alone breaks the aim. Today
+   `pose_translator` reads POSE turned 90 deg, so on the sentry
+   (`use_rf2o:=true`) the EKF fuses rf2o's x/y with `/odom` velocity turned
+   90 deg, and `mcb_relay` sees the two drift apart at sqrt(2) x distance:
+   while moving and confident it relocalizes every 0.3 s (`hold_off_s`),
+   and the MCB drifts up to ~0.4 m at 1 m/s in between. With raw `/odom`
+   passthrough the two turns cancel in `target - odo` and the aim is right.
 2. **Pitch for `z` above the pitch pivot** (`:72`): `solveForPitch` gets
    `z - OFFSET_Z_ROBOT_TO_PITCH_PIVOT` (0.39 m). `z` is from the ground, so
    every shot aims 0.39 m high. `Reticle.hpp:329` already subtracts it.
