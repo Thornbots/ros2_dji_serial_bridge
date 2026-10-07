@@ -33,10 +33,7 @@ needs a rebuild.
 
 ## Open
 
-- **`CV_TARGET`'s `x/y/z` frame is documented, not settled.** The docs say
-  `odom`, POSE's frame, but the Jetson's `odom` is the localization
-  EKF's and RELOCALIZE moves the MCB's origin. `../CV_SPLIT_PLAN.md` W.3's
-  open issues.
+- Frame agreement and RELOCALIZE coordination: [shared aim frame](README.md#shared-aim-frame).
 
 ## Committing
 
