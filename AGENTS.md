@@ -33,11 +33,7 @@ needs a rebuild.
 
 ## Open
 
-- **`CV_TARGET`'s `x/y/z` is our `odom`.** `mcb_relay` relocalizes the MCB
-  onto `/localization/odom`, the `odom->root` the aim point is built in, so
-  the gap is the MCB's drift since the last RELOCALIZE. Branch `rep-105`
-  needs MCBV3 `rep-105`, where every x/y and yaw on the wire is the field
-  frame (`UART_PROTOCOL.md`). Not run on the robot. `../CV_SPLIT_PLAN.md` W.3.
+- Frame agreement and RELOCALIZE coordination: [shared aim frame](README.md#shared-aim-frame).
 
 ## Committing
 

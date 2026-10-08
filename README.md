@@ -98,6 +98,26 @@ Proposed, not applied: **`POSE` (id=2) chassis yaw** (2026-09-29), two
 trailing floats taking it 25 → 33 bytes, in `UART_PROTOCOL.md`. Until both
 sides agree, `RobotPose.chassis_yaw` and `chassis_yaw_rate` read 0.
 
+### Shared aim frame
+
+Nightly uses the field frame on both sides: POSE, RELOCALIZE and CV_TARGET
+are centred on the field, with x toward blue's base. Deploy the matching
+firmware and ROS stack together; the unchanged payload length cannot detect
+an axis mismatch. The team's start pose, including red (-4.625, 0), remains
+unmeasured on the field.
+
+The Jetson aims in localization's EKF-fused `odom`. RELOCALIZE moves the MCB's
+raw odometry toward that frame; an in-flight aim remains in the shared frame.
+The residual is MCB drift since the last accepted correction. The current
+1 ms mailbox can lose a RELOCALIZE arriving alongside CV_TARGET; measure
+that and the UART/read delays on hardware.
+
+`root` is heading-fixed and gimbal yaw is world yaw, so the existing aim does
+not require chassis yaw. The [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw)
+remains unapplied. The bridge stamp contract is in
+[MCB to Jetson](UART_PROTOCOL.md#mcb--jetson); hardware measurements and
+moving-shooter acceptance are in [ROADMAP track B](../ROADMAP.md#b-hit-while-we-move).
+
 ## Topics
 
 One per message ID, two for `PING`: `~/nav_goal`, `~/cv_target`, `~/pose`,
