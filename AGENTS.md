@@ -22,10 +22,11 @@ needs a rebuild.
 
 ## Scope
 
-- Stays a pure UART/DJI-protocol translator: no application logic, and nothing
-  but `thornbots_pkg`'s `mcb_relay` may publish or subscribe on its topics.
-  Anything that wants to reach the MCB goes through that relay; adding a direct
-  publisher here is the wrong fix.
+- Stays a pure UART/DJI-protocol translator: no application logic. Only
+  `thornbots_pkg`'s `mcb_relay` publishes outgoing aim/relocalization.
+  Incoming pose/referee consumers are listed in
+  [the robot node graph](../thornbots_pkg/README.md#nodes). New outgoing
+  application logic goes through the relay, not a direct bridge publisher.
 - Wire-format changes need firmware coordination. The MCB's matching struct
   lives outside this repo; changing a payload layout without the firmware side
   breaks the link silently. Read `README.md`'s "MCB firmware coordination"

@@ -17,86 +17,56 @@ mismatch fails the receiver's length check and the topic simply stops, and a
 field that changes meaning under a stable layout is not caught at all. Every
 wire change is two commits in two repos, landed together.
 
-### Asked of the firmware (2026-10-04)
+### Asked of the firmware
 
-Against `position-based-cv` `0885a69`, for the sentry's first shots. The
-2026-10-03 asks were against `f835be1`; `1c2405c` since dropped the aim's
-`-PI/2`, so its yaw reads `CV_TARGET` as REP-105 already. Sim's MCB
-emulator still ports `f835be1` (`../sim/README.md` "MCB emulator").
-Neither is in `0885a69` yet (re-read 2026-10-04).
+The shared field frame and pitch-pivot correction are implemented in the
+workspace-pinned MCBV3 `nightly`. Deploy firmware and ROS together; physical
+acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
+The earlier asks against `position-based-cv` `0885a69` describe old firmware,
+not the current integration.
 
-1. **One frame for the aim: REP-105.** The aim's yaw (`AutoAimAndFireCommand.cpp:70-71`)
-   treats `x/y` as x forward, y left, but subtracts `odo->getX()/getY()`,
-   which are x right, y forward. Right only at the power-on spot. Subtract
-   `(odo->getY(), -odo->getX())` there; `POSE` sends `(y, -x)`, velocity the
-   same; `RELOCALIZE` and `NAV_GOAL` `(x, y)` arrive as `(-y, x)`. Don't
-   rotate `CV_TARGET`: that would now turn the aim 90 deg. `head_yaw` matches.
-   Land both halves in one commit: either alone breaks the aim. Until
-   then `thornbots_pkg`'s `mcb_x_right` converts on the Jetson
-   (`../thornbots_pkg/README.md` "MCB axes"); the robot image that takes
-   the fixed firmware must run with it false, or the aim turns 90 deg.
-2. **Pitch for `z` above the pitch pivot** (`:72`): `solveForPitch` gets
-   `z - OFFSET_Z_ROBOT_TO_PITCH_PIVOT` (0.39 m). `z` is from the ground, so
-   every shot aims 0.39 m high. `Reticle.hpp:329` already subtracts it.
-
-Dropped: clamping `delay_ms - FIRING_LATENCY_TIME` (`:57`, now 80 ms).
-Under 80 the `uint32` wraps, but `MilliTimeout` adds it to now in `uint32`
-too, so the shot fires on the next cycle, as a clamp would.
-
-Keep: firing on bit 0 alone, one pending shot that each fire frame
-restarts, aiming for 200 ms after the last frame, patrolling only on bit 1.
-
-### MCBV3 `rep-105` (2026-10-04)
-
-Branch `rep-105` here goes with MCBV3 branch `rep-105` (`cf42375`), off
-`0885a69`. It does "Asked" item 1 and more: every x/y and yaw on the wire is
-the field frame (`UART_PROTOCOL.md`), so POSE item 3 and the `head_yaw` zero
-in item 4 below no longer hold there. Item 2 (pitch pivot) isn't in it.
+Remaining CV coordination is in [ROADMAP short todos](../ROADMAP.md#short-todos):
+T31 gates hit turns while tracking, and T33 proposes a patrol-point flag at
+reserved bit 3. Neither changes the wire contract yet. The
+[POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw) also
+remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
-Read against `Thornbots/MCBV3` branch `position-based-cv` at `0885a69`
-(2026-10-03), the branch the sentry runs, and still the newest commit on any
-MCBV3 branch on 2026-10-04. It has our message names and
-layouts. Paths are under `MCB-project/src/`. Each line is a firmware-side
-fix before the match test's E2 can score. (`uart-names-from-ros-topics` at
-`47512cc` is older: its `CvTarget` still leads with a `uint32_t stamp_ms`,
-19 bytes, and `getMsg` would refuse our 15.)
+Reviewed against pinned [MCBV3 a2ea519](https://github.com/Thornbots/MCBV3/commit/a2ea519)
+on 2026-10-08. Sim compiles that checkout's C++ control code; it no longer
+ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
+Paths below are under `MCB-project/src/` in MCBV3.
 
-1. **`CV_TARGET` aims and fires, in two frames at once**
-   (`subsystems/jetson/AutoAimAndFireCommand.cpp:53-90`): yaw is
-   `atan2` of `x/y` minus `odo->getX()/getY()`, read as REP-105 while the
-   odometry is x right (item 3; "Asked" item 1). Pitch solves for `z` from
-   the pivot. The shot goes `delay_ms` after receipt less
-   `FIRING_LATENCY_TIME` (80 ms) when flags bit 0 is set.
-2. **`POSE` is 90 Hz and `REF_SYS` 10 Hz**: nine
-   poses then one ref on one 10 ms timer (`JetsonSubsystem.cpp:27-65`); the
-   200 ms ref timer (`JetsonSubsystem.hpp:137-138`) is unused.
-3. **`POSE` x/y is x right, y forward** of the heading at power-on
-   (`subsystems/drivetrain/SimpleAutoDriveCommand.cpp:108`), not REP-105's x
-   forward, y left. `thornbots_pkg` converts it (`mcb_x_right`).
-4. **`head_yaw` is `[0, 2pi)`, zero at IMU boot** (`MahonyAHRS.h:75-78`
-   in taproot, via `GimbalSubsystem.cpp:41`), and counter-clockwise.
-   Confirmed on the sentry 2026-10-03 (bag run00029: a hand turn CCW raised
-   it). Our URDF turns `headlink` about +z to match; it turned about -z
-   before that date, which mirrored `root->camera`.
-5. **`odom_status` is always `ODOM_PODS`** (`JetsonSubsystem.cpp:39`).
-6. **`delta_angle_got_hit_in` is 123 when not hit** since the last `REF_SYS`,
-   `HitRing::PLACEHOLDER_ANGLE` (`subsystems/ui/objects/HitRing.hpp:99`).
-7. **One mailbox slot.** Each frame overwrites the last
-   (`communication/UARTCommunication.cpp:37-44`, the TODO at `.hpp:61`), so a
-   `RELOCALIZE` landing in the same 1 ms cycle as a `CV_TARGET` is lost.
-8. **`NAV_GOAL` has no reader on the sentry.** Only `AutoDriveCommand` reads
-   it, and the sentry's switch schedules `SimpleAutoDriveCommand`
-   (`robots/sentry/SentryControl.hpp:61`, `:191-192`), a fixed waypoint route.
-9. **`seq` is always 0** on frames it sends (`UARTCommunication.cpp:21`).
-
-`RELOCALIZE` is fine there: `checkApplyRelocalize` calls `odo->relocalizeTo`
-with the frame's x/y (`JetsonSubsystem.cpp:79`).
-
-Proposed, not applied: **`POSE` (id=2) chassis yaw** (2026-09-29), two
-trailing floats taking it 25 → 33 bytes, in `UART_PROTOCOL.md`. Until both
-sides agree, `RobotPose.chassis_yaw` and `chassis_yaw_rate` read 0.
+- `CV_TARGET` is the current 15-byte payload. Aim subtracts field-frame
+  odometry from x/y and subtracts the pitch-pivot height from ground-frame z
+  before solving ballistics (`subsystems/jetson/AutoAimAndFireCommand.cpp`).
+  It holds a received aim for 200 ms. Bit 0 permits an indexer request after
+  `delay_ms - FIRING_LATENCY_TIME` (80 ms); shorter delays execute on the
+  next control cycle. The pending shot is restarted by each new aim frame.
+- Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
+  hit turn, including interruption of a live aim. Clearing bit 2 cancels
+  that turn. The Jetson's per-frame decision and patrol marker remain open.
+- POSE position, velocity and head yaw use the
+  [shared field frame](#shared-aim-frame). `mcb_x_right` is removed.
+  `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
+  timer (nominally 90 Hz and 10 Hz). `odom_status` still reports `ODOM_PODS`.
+- The hit-angle implementation does not yet establish the relative-angle,
+  since-last-frame contract in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
+  `util/hitTracker.hpp` scales radian IMU yaw by `PI/180`, and resets `isHit`
+  every control cycle. `JetsonSubsystem.cpp` samples it for REF_SYS at 10 Hz,
+  so a hit between samples can be missed. T31 includes unit/frame agreement
+  and latching; physical hit direction remains unvalidated.
+- The UART receiver has one mailbox slot: a later frame can overwrite an
+  unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
+  with CV_TARGET traffic before relying on corrections while moving.
+- The normal sentry switch schedules the fixed-waypoint
+  `SimpleAutoDriveCommand`, not the NAV_GOAL reader `AutoDriveCommand`
+  (`robots/sentry/SentryControl.hpp`). Sim's `mcb.launch.py drive:=auto`
+  selects that reader explicitly; the match stages use scripted sim routes.
+- Outgoing UART sequence numbers remain zero (`UARTCommunication.cpp`).
+  Chassis yaw is absent from POSE, so the bridge publishes zero for its
+  proposed chassis-yaw fields.
 
 ### Shared aim frame
 
