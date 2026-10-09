@@ -22,6 +22,10 @@ needs a rebuild.
 
 ## Scope
 
+- `serial_debug` and `test_bridge` are C++ diagnostics. Preserve their CLI,
+  checks and the hex tool's existing diagnostic CRC16 behavior; the
+  production bridge's wire implementation is unchanged. Only launch stays Python.
+
 - Stays a pure UART/DJI-protocol translator: no application logic. Only
   `thornbots_pkg`'s `mcb_relay` publishes outgoing aim/relocalization.
   Incoming pose/referee consumers are listed in

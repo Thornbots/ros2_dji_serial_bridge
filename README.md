@@ -134,17 +134,28 @@ succeeds.
 ```bash
 ros2 launch dji_serial_bridge dji_bridge.launch.py device:=/dev/ttyUSB0 baudrate:=115200
 
-python3 scripts/test_bridge.py                       # config + live check, 10s timeout
-python3 scripts/test_bridge.py --config-only         # config check, no ROS
-python3 scripts/test_bridge.py --timeout 30          # slow MCB startup
-python3 scripts/test_bridge.py --device /dev/ttyUSB0 --baudrate 115200
+ros2 run dji_serial_bridge test_bridge                       # config + live check, 10s timeout
+ros2 run dji_serial_bridge test_bridge --config-only         # config check, no ROS graph
+ros2 run dji_serial_bridge test_bridge --timeout 30          # slow MCB startup
+ros2 run dji_serial_bridge test_bridge --device /dev/ttyUSB0 --baudrate 115200
 
-python3 scripts/serial_debug.py /dev/ttyTHS1 --baud 115200         # raw hex dump, bridge stopped
-python3 scripts/serial_debug.py /dev/ttyTHS1 --baud 115200 --log rx.bin
+ros2 run dji_serial_bridge serial_debug /dev/ttyTHS1 --baud 115200         # raw hex dump, bridge stopped
+ros2 run dji_serial_bridge serial_debug /dev/ttyTHS1 --baud 115200 --log rx.bin
 ```
 
-`test_bridge.py` waits for `~/pose` and `~/ref_sys` from a running bridge.
-`serial_debug.py` opens the port itself, so stop the bridge first; it
+`test_bridge` waits for `~/pose` and `~/ref_sys` from a running bridge.
+`serial_debug` opens the port itself, so stop the bridge first; it
 defaults to 921600 baud, so always pass `--baud`. Its `--tx` sends a
 `RELOCALIZE` to (5, 3) every second, which moves the MCB's odometry origin:
 not on a robot that's driving.
+
+Both diagnostics are C++17. The hex tool intentionally preserves the former
+Python diagnostic's CRC16 table (the first 16 entries repeated), which differs
+from the production bridge's full DJI table. Its CRC16 verdict and transmitted
+test frames therefore retain that existing limitation; raw hex and byte logs
+are unaffected.
+
+`colcon test --packages-select dji_serial_bridge` runs the diagnostic parser
+and PTY transport gtests plus ament lint. The parser fixtures preserve the
+former Python diagnostic's bytes and printed error lines. No hardware or
+running ROS graph is needed for these unit tests.
