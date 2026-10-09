@@ -3,7 +3,7 @@
 # ROS-internal only: produced by roi_depth_query's roi_depth_node (in the
 # Realsense_ROI_Depth_Rectifier repo) and by sim's cv_target_emulator.py,
 # consumed by thornbots_pkg's target_selector.py. Never crosses the UART wire.
-std_msgs/Header header
+std_msgs/Header header  # stamp = driving detection frame capture time; frame_id = camera frame
 
 geometry_msgs/Point32[4] corners  # TL,TR,BR,BL - camera body frame (REP-103), metres
 geometry_msgs/Point32 center      # deprojected bbox-center point
