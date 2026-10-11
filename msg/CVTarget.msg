@@ -16,8 +16,9 @@ float32 z                    # aim point, odom z, up (m)
 uint16 delay_ms              # ms after the MCB receives the frame to fire (0 = immediate)
 
 # Booleans packed into the single flags byte.
-# Bit layout on the wire (MSB→LSB): reserved x5|turn_to_hit|
+# Bit layout on the wire (MSB→LSB): reserved x4|patrol|turn_to_hit|
 # type_c_based_patrol|fire -- table in UART_PROTOCOL.md.
 bool fire                    # fire this aim point delay_ms after receipt
 bool type_c_based_patrol     # true lets the MCB patrol on its own, false stops it
 bool turn_to_hit             # true lets the MCB turn toward where it got hit
+bool patrol                  # informational: this point comes from Jetson patrol
