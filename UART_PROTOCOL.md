@@ -49,12 +49,19 @@ namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
 Rates are the firmware's at `0885a69`: nine POSE then one REF_SYS on one
 10 ms timer.
 
-**The field frame.** Every x/y and yaw on the wire, both directions, is in
-one frame (MCBV3 branch `rep-105`): REP-105, z up, (0, 0) at the field
+**Field-aligned frames.** Both wire frames use REP-103 metres/radians,
+z up, (0, 0) initially at the field
 centre, x toward blue's base, y left. The MCB boots at its team's start,
 red (-4.625, 0) facing +x, blue (4.625, 0) facing -x, and adds it to its
 odometry and IMU yaw (`OdometrySubsystemConstants.hpp`; not measured on
-the field). `0885a69` sends x right, y forward of its power-on spot instead.
+the field). POSE and CV_TARGET use continuous raw pod odometry (`odom` on
+the Jetson), which is never relocalized. NAV_GOAL and RELOCALIZE use the
+corrected navigation frame (`nav_odom` on the Jetson). RELOCALIZE changes
+only the MCB's navigation offset; it cannot move POSE or an existing aim
+point. These frames coincide at initialization and may subsequently diverge.
+The field-centred raw origin is an application choice; raw odometry can drift,
+as [REP 105](https://github.com/ros-infrastructure/rep/blob/master/rep-0105.rst)
+permits. Neither raw odometry nor an aim point is a global localization fix.
 
 An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 
@@ -77,7 +84,7 @@ header are discarded.
 | 0   | 4    | float32 | `x`       | `point.x` |
 | 4   | 4    | float32 | `y`       | `point.y` |
 
-A goal in the field frame, metres, consumed by its autonomous
+A goal in the corrected navigation frame, metres, consumed by its autonomous
 drive controller. No publisher in this workspace: `mcb_relay` wires up
 `~/cv_target` and `~/relocalize` only.
 
@@ -122,9 +129,9 @@ independently, or pair up wrongly on the MCB and fire at a point the delay
 was never computed for. `delay_ms` = 0 with `fire` set means fire now;
 `fire` clear means `delay_ms` is meaningless.
 
-`x/y/z` is a world-frame position in metres in the field frame, which is
-our `odom` (z up). The firmware aims at it less its odometry, in the same
-frame. The MCB holds the point with its IMU and
+`x/y/z` is a world-frame position in metres in raw aim `odom` (z up).
+The firmware subtracts its never-relocalized, field-aligned pod position.
+The MCB holds the point with its IMU and
 odometry while the chassis moves and turns, then aims at it and applies its
 own gravity, drag and muzzle geometry. It is not a root- or camera-frame
 offset and not a barrel attitude. Velocity
@@ -142,9 +149,11 @@ header are discarded.
 | 0   | 4    | float32 | `x`         | `point.x` |
 | 4   | 4    | float32 | `y`         | `point.y` |
 
-The lidar-estimated position the MCB adopts as its odometry origin, same frame
-and units as POSE's `x/y`. It overwrites MCB odometry. The node logs every
-transmission at INFO with the last received `~/pose` beside the new coordinate.
+The localization-estimated position in corrected navigation `nav_odom`, metres.
+The MCB sets its navigation offset against its current raw pod position.
+Navigation controllers see this correction; raw POSE and gimbal aim do not.
+The node logs every transmission beside the latest raw `~/pose`; those
+coordinates are in different frames after a correction.
 
 ---
 
@@ -165,8 +174,8 @@ before a read is not taken off.
 
 | Off | Size | Type    | Field         | Meaning                                  |
 |-----|------|---------|---------------|------------------------------------------|
-| 0   | 4    | float32 | `x`           | chassis X, field frame, metres           |
-| 4   | 4    | float32 | `y`          | chassis Y, field frame, metres           |
+| 0   | 4    | float32 | `x`           | chassis X, raw aim odom, metres          |
+| 4   | 4    | float32 | `y`          | chassis Y, raw aim odom, metres          |
 | 8   | 4    | float32 | `vel_x`      | chassis X velocity, m/s                  |
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
 | 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
@@ -180,7 +189,8 @@ before a read is not taken off.
 | 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
 | 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
 
-`x/y`, velocity and `head_yaw` are in the field frame (above). At
+`x/y`, velocity and `head_yaw` are in the raw field-aligned aim frame (above).
+RELOCALIZE never changes them. At
 `0885a69` they were x right, y forward of the power-on spot, and
 `head_yaw` zero at IMU boot. The firmware always sends `ODOM_PODS` today.
 README.md "Where the firmware stands" has the line refs.

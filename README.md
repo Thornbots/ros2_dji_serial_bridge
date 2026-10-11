@@ -78,15 +78,17 @@ Paths below are under `MCB-project/src/` in MCBV3.
 
 ### Shared aim frame
 
-Nightly uses the field frame on both sides: POSE, RELOCALIZE and CV_TARGET
-are centred on the field, with x toward blue's base. Deploy the matching
+POSE and CV_TARGET share continuous raw aim odometry; NAV_GOAL and RELOCALIZE
+use corrected navigation odometry. The exact frame roles are owned by
+[UART_PROTOCOL](UART_PROTOCOL.md#message-types). Deploy the matching
 firmware and ROS stack together; the unchanged payload length cannot detect
 an axis mismatch. The team's start pose, including red (-4.625, 0), remains
 unmeasured on the field.
 
-The Jetson aims in localization's EKF-fused `odom`. RELOCALIZE moves the MCB's
-raw odometry toward that frame; an in-flight aim remains in the shared frame.
-The residual is MCB drift since the last accepted correction. The current
+Jetson camera/target/aim transforms use raw MCB POSE, independently of the
+EKF and map localization. RELOCALIZE updates only the MCB navigation offset;
+gimbal aim subtracts raw odometry. Raw drift and UART/sample timing still
+affect aim, but navigation corrections cannot move it. The current
 1 ms mailbox can lose a RELOCALIZE arriving alongside CV_TARGET; measure
 that and the UART/read delays on hardware.
 
@@ -154,7 +156,7 @@ ros2 run dji_serial_bridge serial_debug /dev/ttyTHS1 --baud 115200 --log rx.bin
 `test_bridge` waits for `~/pose` and `~/ref_sys` from a running bridge.
 `serial_debug` opens the port itself, so stop the bridge first; it
 defaults to 921600 baud, so always pass `--baud`. Its `--tx` sends a
-`RELOCALIZE` to (5, 3) every second, which moves the MCB's odometry origin:
+`RELOCALIZE` to (5, 3) every second, which moves the MCB's navigation position:
 not on a robot that's driving.
 
 Both diagnostics are C++17. The hex tool intentionally preserves the former
