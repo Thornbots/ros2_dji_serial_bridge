@@ -116,6 +116,9 @@ public:
     enforce_crc_ = get_parameter("enforce_crc").as_bool();
     debug_log_ = get_parameter("debug_log").as_bool();
     const auto diag_s = get_parameter("diag_interval_s").as_int();
+    if (diag_s < 0) {
+      throw std::invalid_argument("diag_interval_s must be nonnegative (0 disables)");
+    }
 
     // ── Pre-open device diagnostics ───────────────────────────────────────
     struct stat sb{};
@@ -199,9 +202,14 @@ public:
     // ── Diagnostic timer ──────────────────────────────────────────────────
     // Fires every diag_interval_s seconds and prints a stats summary so you
     // can see at a glance whether bytes / frames are actually flowing.
-    diag_timer_ = create_wall_timer(
-            std::chrono::seconds(diag_s),
-            std::bind(&DjiSerialBridge::print_diagnostics, this));
+    if (diag_s > 0) {
+      diag_timer_ = create_wall_timer(
+        std::chrono::seconds(diag_s),
+        std::bind(&DjiSerialBridge::print_diagnostics, this));
+      RCLCPP_INFO(get_logger(), "Diagnostic summary every %ld s", diag_s);
+    } else {
+      RCLCPP_INFO(get_logger(), "Diagnostic summary disabled");
+    }
 
     // ── Read thread ───────────────────────────────────────────────────────
     running_.store(true);
@@ -211,11 +219,10 @@ public:
                     "═══════════════════════════════════════════════════════════\n"
                     "  MCB serial bridge READY\n"
                     "  device=%s  baud=%ld  enforce_crc=%s  poll_ms=%d\n"
-                    "  Diagnostic summary every %ld s\n"
                     "═══════════════════════════════════════════════════════════",
                     device.c_str(), baudrate,
                     enforce_crc_ ? "true" : "false",
-                    poll_ms, diag_s);
+                    poll_ms);
   }
 
   ~DjiSerialBridge() override
@@ -854,7 +861,13 @@ private:
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DjiSerialBridge>(rclcpp::NodeOptions{}));
+  try {
+    rclcpp::spin(std::make_shared<DjiSerialBridge>(rclcpp::NodeOptions{}));
+  } catch (const std::exception & ex) {
+    RCLCPP_FATAL(rclcpp::get_logger("dji_serial_bridge"), "Bridge failed: %s", ex.what());
+    rclcpp::shutdown();
+    return 1;
+  }
   rclcpp::shutdown();
   return 0;
 }

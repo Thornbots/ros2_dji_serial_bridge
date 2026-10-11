@@ -114,7 +114,7 @@ line is silently ignored.
 - `baudrate` (int) : bits per second, e.g. 115200
 - `read_poll_ms` (int) : poll() timeout in ms (10 is fine)
 - `enforce_crc` (bool) : drop frames failing CRC (default true)
-- `diag_interval_s` (int) : seconds between diagnostic summaries, 0 disables
+- `diag_interval_s` (int) : seconds between diagnostic summaries; 0 disables, negatives are rejected
 - `debug_log` (bool) : log everything if true
 
 ## Diagnostics
