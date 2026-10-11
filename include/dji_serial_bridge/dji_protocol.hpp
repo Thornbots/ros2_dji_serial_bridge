@@ -118,7 +118,7 @@ struct __attribute__((packed)) CvTargetPayload
   float    z;            // position, odom z, up (metres)
   uint16_t delay_ms;     // fire this many ms after frame receipt (0 = immediate)
   uint8_t  flags;        // CVTarget booleans: bit0 fire, bit1 type_c_based_patrol,
-                         // bit2 turn_to_hit, bits 3-7 reserved (0)
+                         // bit2 turn_to_hit, bit3 patrol, bits 4-7 reserved (0)
 };
 static_assert(sizeof(CvTargetPayload) == 15, "CvTargetPayload size mismatch");
 

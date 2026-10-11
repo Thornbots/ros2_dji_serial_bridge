@@ -762,7 +762,7 @@ private:
     p.z = msg->z;
     p.delay_ms = msg->delay_ms;
     p.flags = (msg->fire ? 0x01 : 0x00) | (msg->type_c_based_patrol ? 0x02 : 0x00) |
-      (msg->turn_to_hit ? 0x04 : 0x00);
+      (msg->turn_to_hit ? 0x04 : 0x00) | (msg->patrol ? 0x08 : 0x00);
 
     const bool ok = send_frame(McbMsgType::CV_TARGET,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
