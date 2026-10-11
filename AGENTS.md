@@ -15,5 +15,5 @@ before changing payloads. Launch through `thornbots_pkg`'s `auto.launch.py`.
 ## Open
 
 Frame agreement and RELOCALIZE coordination: [shared aim frame](README.md#shared-aim-frame).
-Board execution and motor-plant fidelity remain in the simulator's
+Board stage integration and motor-plant limits remain in the simulator's
 [MCB emulator](../sim/README.md#mcb-emulator).

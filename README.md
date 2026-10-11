@@ -42,6 +42,8 @@ ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-e
 The simulator now runs each hosted firmware tick inside gz and feeds physical
 motor feedback to its controllers; the same section owns fidelity limits.
 This fixture change leaves every Jetson UART payload unchanged.
+The optional [Type C board backend](../sim/README.md#type-c-board-execution-with-renode)
+uses the hardware ELF's USART driver with this same bridge and wire contract.
 Paths below are under `MCB-project/src/` in MCBV3.
 
 - `CV_TARGET` is the current 15-byte payload. Aim subtracts field-frame
