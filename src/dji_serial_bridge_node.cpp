@@ -254,9 +254,9 @@ private:
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
   std::atomic<uint64_t> ping_msgs_pub_{0};
   std::atomic<uint64_t> ping_msgs_tx_{0};
-  // Last chassis pose received from the MCB (via POSE / ~/pose). Cached so
-  // relocalize_callback can log the coordinate being overwritten. Written on
-  // the serial read thread, read on the executor thread — hence atomic.
+  // Last raw-aim POSE x/y, cached so relocalize_callback can log it beside
+  // the navigation fix (different frames once a navigation offset exists).
+  // Written on the serial read thread, read on the executor thread: atomic.
   std::atomic<float> last_pose_x_{0.0f};
   std::atomic<float> last_pose_y_{0.0f};
   std::atomic<bool> have_pose_{false};

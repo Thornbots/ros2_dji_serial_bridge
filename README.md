@@ -19,10 +19,9 @@ wire change is two commits in two repos, landed together.
 
 ### Asked of the firmware
 
-Raw aim coordinates and the pitch-pivot correction are implemented in the
-workspace-pinned MCBV3 `nightly`; navigation odometry has a separate correction
-offset. Deploy firmware and ROS together; physical
-acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
+Raw aim coordinates, a separate translation-only navigation offset and the
+pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
+firmware and ROS together; physical acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
@@ -36,8 +35,9 @@ remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
-Reviewed against pinned [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
-on 2026-10-11, plus the informational bit-3 definition. Sim compiles
+Reviewed against [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
+on 2026-10-11, plus the informational bit-3 definition and the raw aim and
+navigation split through [MCBV3 290e555](https://github.com/Thornbots/MCBV3/commit/290e555). Sim compiles
 that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
 The simulator now runs each hosted firmware tick inside gz and feeds physical
@@ -57,7 +57,8 @@ Paths below are under `MCB-project/src/` in MCBV3.
   marks Jetson patrol points without changing these gates; the compiled
   [sim firmware tests](../sim/README.md#mcb-emulator) exercise it clear/set.
 - POSE position, velocity and head yaw use the
-  raw aim frame described in [shared aim frame](#shared-aim-frame).
+  raw aim frame described in
+  [UART_PROTOCOL message types](UART_PROTOCOL.md#message-types).
   `mcb_x_right` is removed.
   `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
   timer (nominally 90 Hz and 10 Hz). `odom_status` still reports `ODOM_PODS`.
@@ -78,7 +79,7 @@ Paths below are under `MCB-project/src/` in MCBV3.
   Chassis yaw is absent from POSE, so the bridge publishes zero for its
   proposed chassis-yaw fields.
 
-### Shared aim frame
+### Aim and navigation frames
 
 POSE and CV_TARGET use continuous raw aim odometry; NAV_GOAL and RELOCALIZE
 use separately corrected navigation odometry. RELOCALIZE updates only the

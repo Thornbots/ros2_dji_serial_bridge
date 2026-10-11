@@ -211,7 +211,7 @@ pods, ERROR into 2, WARN into 1 or 3.
 Not applied: the bytes above are what both sides send today. `RobotPose`
 already has `chassis_yaw` and `chassis_yaw_rate`, published as 0. Proposed
 2026-09-29, to agree with the firmware side; see
-[shared aim frame](README.md#shared-aim-frame):
+[aim and navigation frames](README.md#aim-and-navigation-frames):
 
 | Off | Size | Type    | Field              | Meaning                                    |
 |-----|------|---------|--------------------|--------------------------------------------|
