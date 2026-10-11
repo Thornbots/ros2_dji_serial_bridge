@@ -55,10 +55,15 @@ centre, x toward blue's base, y left. The MCB boots at its team's start,
 red (-4.625, 0) facing +x, blue (4.625, 0) facing -x, and adds it to its
 odometry and IMU yaw (`OdometrySubsystemConstants.hpp`; not measured on
 the field). POSE and CV_TARGET use continuous raw pod odometry (`odom` on
-the Jetson), which is never relocalized. NAV_GOAL and RELOCALIZE use the
+the Jetson), which RELOCALIZE never moves. Boot/team selection can reanchor
+the provisional start: red-to-blue selection changes the start by 9.25 m
+and changes the startup heading. This initialization exception is not a
+navigation correction; discard pose interpolation across that discontinuity.
+NAV_GOAL and RELOCALIZE use the
 corrected navigation frame (`nav_odom` on the Jetson). RELOCALIZE changes
 only the MCB's navigation offset; it cannot move POSE or an existing aim
-point. These frames coincide at initialization and may subsequently diverge.
+point. Navigation offsets are translation-only; these frames keep the same
+axes, coincide at initialization and may subsequently diverge in position.
 The field-centred raw origin is an application choice; raw odometry can drift,
 as [REP 105](https://github.com/ros-infrastructure/rep/blob/master/rep-0105.rst)
 permits. Neither raw odometry nor an aim point is a global localization fix.

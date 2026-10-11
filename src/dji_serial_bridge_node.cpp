@@ -617,7 +617,7 @@ private:
     PosePayload raw{};
     std::memcpy(&raw, payload, sizeof(raw));
 
-    // Cache raw aim odometry for diagnostics beside navigation corrections.
+    // Cache raw POSE coordinates for diagnostics; RELOCALIZE does not overwrite them.
     last_pose_x_.store(raw.x, std::memory_order_relaxed);
     last_pose_y_.store(raw.y, std::memory_order_relaxed);
     have_pose_.store(true, std::memory_order_relaxed);
