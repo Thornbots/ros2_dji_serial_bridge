@@ -36,6 +36,9 @@ remains unapplied; current heading-fixed aiming does not require it.
 Reviewed against pinned [MCBV3 a2ea519](https://github.com/Thornbots/MCBV3/commit/a2ea519)
 on 2026-10-08. Sim compiles that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
+The simulator now runs each hosted firmware tick inside gz and feeds physical
+motor feedback to its controllers; the same section owns fidelity limits.
+This fixture change leaves every Jetson UART payload unchanged.
 Paths below are under `MCB-project/src/` in MCBV3.
 
 - `CV_TARGET` is the current 15-byte payload. Aim subtracts field-frame
