@@ -26,15 +26,17 @@ The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
 Remaining CV coordination is in [ROADMAP short todos](../ROADMAP.md#short-todos):
-T31 gates hit turns while tracking, and T33 proposes a patrol-point flag at
-reserved bit 3. Neither changes the wire contract yet. The
+T31 gates hit turns while tracking. The informational patrol-point flag at
+bit 3 is implemented; the firmware currently ignores it. The MCB team should
+decide whether to use that marker to distinguish Jetson sweeps and hit-turn
+patrol from tracked targets. It does not gate firing. The
 [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw) also
 remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
 Reviewed against pinned [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
-on 2026-10-11 (`MCB-project/` is unchanged since a2ea519). Sim compiles
+on 2026-10-11, plus the informational bit-3 definition. Sim compiles
 that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
 Paths below are under `MCB-project/src/` in MCBV3.
@@ -47,7 +49,9 @@ Paths below are under `MCB-project/src/` in MCBV3.
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
   hit turn, including interruption of a live aim. Clearing bit 2 cancels
-  that turn. The Jetson's per-frame decision and patrol marker remain open.
+  that turn. The Jetson's per-frame hit-turn decision remains open. Bit 3
+  marks Jetson patrol points without changing these gates; the compiled
+  [sim firmware tests](../sim/README.md#mcb-emulator) exercise it clear/set.
 - POSE position, velocity and head yaw use the
   [shared field frame](#shared-aim-frame). `mcb_x_right` is removed.
   `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
@@ -111,7 +115,7 @@ line is silently ignored.
 - `baudrate` (int) : bits per second, e.g. 115200
 - `read_poll_ms` (int) : poll() timeout in ms (10 is fine)
 - `enforce_crc` (bool) : drop frames failing CRC (default true)
-- `diag_interval_s` (int) : seconds between diagnostic summaries, 0 disables
+- `diag_interval_s` (int) : seconds between diagnostic summaries; 0 disables, negatives are rejected
 - `debug_log` (bool) : log each REF_SYS RX and each PING RX/TX at INFO (default true)
 
 ## Diagnostics

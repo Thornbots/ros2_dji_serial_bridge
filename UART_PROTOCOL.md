@@ -97,14 +97,18 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | Bit | `CVTarget` field      | Set means                                        |
 |-----|-----------------------|--------------------------------------------------|
 | 0   | `fire`                | fire this aim point `delay_ms` after receipt     |
-| 1   | `type_c_based_patrol` | the MCB may patrol on its own; clear stops it    |
-| 2   | `turn_to_hit`         | the MCB may turn toward where it got hit         |
+| 1   | `type_c_based_patrol` | MCB permission to patrol on its own; clear stops it |
+| 2   | `turn_to_hit`         | MCB permission to turn toward where it got hit  |
+| 3   | `patrol`              | this aim point came from Jetson patrol, including hit-turn patrol |
 
-Bits 3-7 are reserved, sent as 0. The bridge packs the byte from
-`CVTarget`'s booleans, as it unpacks REF_SYS's. Bits 1 and 2 reach
-the MCB with every frame.
+Bits 4-7 are reserved, sent as 0. Bit 3 is informational and currently
+ignored by firmware; it does not gate bit 0 or otherwise change firing. Bit 1
+is MCB patrol permission, while bit 3 identifies the source of this point.
+The bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS's.
+Bits 1 and 2 reach the MCB with every frame.
 Every frame is an aim point: the Jetson decides aim and fire itself, and
-the MCB moves the gimbal only on these frames. With no target the Jetson
+the MCB aims at these points while they are valid. Bits 1 and 2 separately
+permit firmware patrol after expiry and interruption toward a hit. With no target the Jetson
 patrols, sending points to sweep the gun with `fire` clear
 (`thornbots_pkg` `patrol_enabled`, on by default). With that off it sends
 nothing between targets.
