@@ -33,8 +33,9 @@ remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
-Reviewed against pinned [MCBV3 a2ea519](https://github.com/Thornbots/MCBV3/commit/a2ea519)
-on 2026-10-08. Sim compiles that checkout's C++ control code; it no longer
+Reviewed against pinned [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
+on 2026-10-11 (`MCB-project/` is unchanged since a2ea519). Sim compiles
+that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
 Paths below are under `MCB-project/src/` in MCBV3.
 
@@ -111,7 +112,7 @@ line is silently ignored.
 - `read_poll_ms` (int) : poll() timeout in ms (10 is fine)
 - `enforce_crc` (bool) : drop frames failing CRC (default true)
 - `diag_interval_s` (int) : seconds between diagnostic summaries, 0 disables
-- `debug_log` (bool) : log everything if true
+- `debug_log` (bool) : log each REF_SYS RX and each PING RX/TX at INFO (default true)
 
 ## Diagnostics
 
