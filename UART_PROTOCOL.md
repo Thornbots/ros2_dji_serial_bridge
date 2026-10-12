@@ -257,7 +257,7 @@ MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
 
 ## Not on the wire
 
-The hosted fixture and Renode board adapter's `MCB2` motor/sensor pipe belongs to the
+The hosted fixture and Renode board adapter's `MCB3` motor/sensor pipe belongs to the
 [sim hardware fixture](../sim/README.md#mcb-emulator). It does not add a UART
 message or change any payload, baud rate or stamp contract here.
 
