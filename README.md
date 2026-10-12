@@ -40,9 +40,13 @@ on 2026-10-11, plus the informational bit-3 definition and the raw aim and
 navigation split through [MCBV3 290e555](https://github.com/Thornbots/MCBV3/commit/290e555). Sim compiles
 that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
-The simulator now runs each hosted firmware tick inside gz and feeds physical
-motor feedback to its controllers; the same section owns fidelity limits.
-This fixture change leaves every Jetson UART payload unchanged.
+Sim's [MCB backend](../sim/README.md#mcb-emulator) owns physical motor feedback
+and fidelity limits. Its [firmware auto-drive stages](../sim/README.md#driving-and-combat-diagnostics-mcb_drive)
+select commands through DBUS. The [Type C backend](../sim/README.md#type-c-board-execution-with-renode)
+uses the hardware ELF's USART driver with this same bridge and wire contract.
+The private hardware pipe leaves every Jetson UART payload unchanged.
+Automatic indexer recovery after calibration/pre-game state is maintained in
+[MCBV3's design](../firmware/MCBV3/README.md#automatic-indexer-recovery).
 Paths below are under `MCB-project/src/` in MCBV3.
 
 - `CV_TARGET` is the current 15-byte payload. Aim subtracts raw aim-frame

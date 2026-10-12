@@ -170,7 +170,8 @@ is true), then checks payload length against the struct size before publishing.
 `header.stamp` on both published messages is when the MCB started sending the
 frame: the read time of its last byte less the frame's wire time at `baudrate`
 (10 bits per byte). No MCB clock is on the wire, and the USB-serial latency
-before a read is not taken off.
+before a read is not taken off. A frame whose send start would precede clock
+zero (bytes read before a simulated clock starts) is dropped with a warning.
 
 ### POSE (id=2) — chassis pose and gimbal angles
 
@@ -271,7 +272,7 @@ MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
 
 ## Not on the wire
 
-The hosted firmware's `MCB2` motor/sensor pipe belongs to the
+The hosted fixture and Renode board adapter's `MCB3` motor/sensor pipe belongs to the
 [sim hardware fixture](../sim/README.md#mcb-emulator). It does not add a UART
 message or change any payload, baud rate or stamp contract here.
 
