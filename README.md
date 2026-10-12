@@ -44,6 +44,8 @@ motor feedback to its controllers; the same section owns fidelity limits.
 This fixture change leaves every Jetson UART payload unchanged.
 The optional [Type C board backend](../sim/README.md#type-c-board-execution-with-renode)
 uses the hardware ELF's USART driver with this same bridge and wire contract.
+Automatic indexer recovery after calibration/pre-game state is maintained in
+[MCBV3's design](../firmware/MCBV3/README.md#automatic-indexer-recovery).
 Paths below are under `MCB-project/src/` in MCBV3.
 
 - `CV_TARGET` is the current 15-byte payload. Aim subtracts field-frame
