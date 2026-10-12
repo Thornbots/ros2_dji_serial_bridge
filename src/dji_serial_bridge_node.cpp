@@ -551,8 +551,16 @@ private:
                          "process_rx_buffer: valid frame  seq=%u  msgType=%u  dataLen=%u",
                          hdr.seq, hdr.msgType, hdr.dataLength);
       frames_rx_.fetch_add(1, std::memory_order_relaxed);
-      dispatch_incoming(hdr.msgType, payload, hdr.dataLength,
-                        frame_stamp(read_ns[total_len - 1], total_len));
+      // Bytes read before the clock is valid (sim time 0) have no capture time.
+      const int64_t start_ns = read_ns[total_len - 1] -
+        static_cast<int64_t>(total_len) * byte_wire_ns_;
+      if (start_ns < 0) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+                             "Dropping frame msgType=%u: send start %.6f s precedes clock zero",
+                             hdr.msgType, static_cast<double>(start_ns) * 1e-9);
+      } else {
+        dispatch_incoming(hdr.msgType, payload, hdr.dataLength, frame_stamp(start_ns));
+      }
 
       // ── 6. Consume the frame ────────────────────────────────────────
       drop(total_len);
@@ -562,11 +570,9 @@ private:
   // When the MCB started sending a frame: the read time of its last byte,
   // less the whole frame's wire time. USB-serial latency is not taken off
   // (unmeasured; thornbots_pkg/AGENTS.md).
-  rclcpp::Time frame_stamp(int64_t last_byte_read_ns, size_t frame_len) const
+  rclcpp::Time frame_stamp(int64_t send_start_ns) const
   {
-    return rclcpp::Time(
-      last_byte_read_ns - static_cast<int64_t>(frame_len) * byte_wire_ns_,
-      get_clock()->get_clock_type());
+    return rclcpp::Time(send_start_ns, get_clock()->get_clock_type());
   }
 
   void dispatch_incoming(
