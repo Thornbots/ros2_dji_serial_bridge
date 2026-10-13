@@ -53,7 +53,9 @@ Paths below are under `MCB-project/src/` in MCBV3.
   odometry from x/y and subtracts the pitch-pivot height from ground-frame z
   before solving ballistics (`subsystems/jetson/AutoAimAndFireCommand.cpp`).
   It holds a received aim for 200 ms. Bit 0 permits an indexer request after
-  `delay_ms - FIRING_LATENCY_TIME` (80 ms); shorter delays execute on the
+  `max(0, delay_ms - FIRING_LATENCY_TIME)`; the wire delay includes
+  indexer latency and alignment wait ([contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision)).
+  Shorter delays execute on the
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
   hit turn, including interruption of a live aim. Clearing bit 2 cancels

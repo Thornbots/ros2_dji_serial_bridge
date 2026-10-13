@@ -108,7 +108,7 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 
 | Bit | `CVTarget` field      | Set means                                        |
 |-----|-----------------------|--------------------------------------------------|
-| 0   | `fire`                | fire this aim point `delay_ms` after receipt     |
+| 0   | `fire`                | request this aim point to exit `delay_ms` after receipt |
 | 1   | `type_c_based_patrol` | MCB permission to patrol on its own; clear stops it |
 | 2   | `turn_to_hit`         | MCB permission to turn toward where it got hit  |
 | 3   | `patrol`              | this aim point came from Jetson patrol, including hit-turn patrol |
@@ -131,7 +131,12 @@ No stamp crosses the wire (dropped 2026-10-03 to match MCBV3
 Aim and fire travel as one frame on purpose. A fire delay is only meaningful
 against the aim point it was solved for; two frames could arrive apart, drop
 independently, or pair up wrongly on the MCB and fire at a point the delay
-was never computed for. `delay_ms` = 0 with `fire` set means fire now;
+was never computed for. `delay_ms` includes the estimated indexer latency plus any alignment wait.
+Firmware requests indexing after `max(0, delay_ms - FIRING_LATENCY_TIME)`;
+its configured latency and calibration limits live in
+[MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
+A delay shorter than that latency requests indexing immediately; physical
+exit still takes time. `delay_ms` = 0 with `fire` set means request now;
 `fire` clear means `delay_ms` is meaningless.
 
 `x/y/z` is a world-frame position in metres in raw aim `odom` (z up).

@@ -13,12 +13,12 @@ std_msgs/Header header       # stamp = decision time; frame_id = odom
 float32 x                    # aim point, odom x (m)
 float32 y                    # aim point, odom y (m)
 float32 z                    # aim point, odom z, up (m)
-uint16 delay_ms              # ms after the MCB receives the frame to fire (0 = immediate)
+uint16 delay_ms              # desired exit delay after receipt, including indexing (0 = request now)
 
 # Booleans packed into the single flags byte.
 # Bit layout on the wire (MSB→LSB): reserved x4|patrol|turn_to_hit|
 # type_c_based_patrol|fire -- table in UART_PROTOCOL.md.
-bool fire                    # fire this aim point delay_ms after receipt
+bool fire                    # request this aim point to exit delay_ms after receipt
 bool type_c_based_patrol     # true lets the MCB patrol on its own, false stops it
 bool turn_to_hit             # true lets the MCB turn toward where it got hit
 bool patrol                  # informational: this point comes from Jetson patrol
