@@ -254,9 +254,9 @@ private:
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
   std::atomic<uint64_t> ping_msgs_pub_{0};
   std::atomic<uint64_t> ping_msgs_tx_{0};
-  // Last chassis pose received from the MCB (via POSE / ~/pose). Cached so
-  // relocalize_callback can log the coordinate being overwritten. Written on
-  // the serial read thread, read on the executor thread — hence atomic.
+  // Last raw-aim POSE x/y, cached so relocalize_callback can log it beside
+  // the navigation fix (different frames once a navigation offset exists).
+  // Written on the serial read thread, read on the executor thread: atomic.
   std::atomic<float> last_pose_x_{0.0f};
   std::atomic<float> last_pose_y_{0.0f};
   std::atomic<bool> have_pose_{false};
@@ -623,14 +623,14 @@ private:
     PosePayload raw{};
     std::memcpy(&raw, payload, sizeof(raw));
 
-    // Cache the MCB's latest reported position so a subsequent relocalize
-    // can log the coordinate it is about to overwrite.
+    // Cache raw POSE coordinates for diagnostics; RELOCALIZE does not overwrite them.
     last_pose_x_.store(raw.x, std::memory_order_relaxed);
     last_pose_y_.store(raw.y, std::memory_order_relaxed);
     have_pose_.store(true, std::memory_order_relaxed);
 
     auto msg = dji_serial_bridge::msg::RobotPose{};
     msg.header.stamp = stamp;
+    msg.header.frame_id = "odom";
     msg.x = raw.x;
     msg.y = raw.y;
     msg.vel_x = raw.vel_x;
@@ -797,20 +797,19 @@ private:
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
     if (ok) {
       const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
-      // Log every relocalize message sent: the pose the MCB last reported
-      // (the coordinate being overwritten) next to the new relocalized one.
+      // Raw aim pose and corrected navigation position are different frames.
       if (have_pose_.load(std::memory_order_relaxed)) {
         RCLCPP_INFO(get_logger(),
-                            "[relocalize TX #%lu] previous MCB pose (last received): "
-                            "x=%.3f y=%.3f  ->  new relocalized: x=%.3f y=%.3f",
+                            "[relocalize TX #%lu] raw aim pose (last received): "
+                            "x=%.3f y=%.3f  ->  navigation fix: x=%.3f y=%.3f",
                             count,
                             last_pose_x_.load(std::memory_order_relaxed),
                             last_pose_y_.load(std::memory_order_relaxed),
                             msg->point.x, msg->point.y);
       } else {
         RCLCPP_INFO(get_logger(),
-                            "[relocalize TX #%lu] previous MCB pose: N/A "
-                            "(no ~/pose received yet)  ->  new relocalized: x=%.3f y=%.3f",
+                            "[relocalize TX #%lu] raw aim pose: N/A "
+                            "(no ~/pose received yet)  ->  navigation fix: x=%.3f y=%.3f",
                             count, msg->point.x, msg->point.y);
       }
     } else {

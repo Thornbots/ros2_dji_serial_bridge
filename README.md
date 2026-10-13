@@ -19,9 +19,9 @@ wire change is two commits in two repos, landed together.
 
 ### Asked of the firmware
 
-The shared field frame and pitch-pivot correction are implemented in the
-workspace-pinned MCBV3 `nightly`. Deploy firmware and ROS together; physical
-acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
+Raw aim coordinates, a separate translation-only navigation offset and the
+pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
+firmware and ROS together; physical acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
@@ -35,8 +35,9 @@ remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
-Reviewed against pinned [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
-on 2026-10-11, plus the informational bit-3 definition. Sim compiles
+Reviewed against [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
+on 2026-10-11, plus the informational bit-3 definition and the raw aim and
+navigation split through [MCBV3 290e555](https://github.com/Thornbots/MCBV3/commit/290e555). Sim compiles
 that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
 Sim's [MCB backend](../sim/README.md#mcb-emulator) owns physical motor feedback
@@ -48,11 +49,13 @@ Automatic indexer recovery after calibration/pre-game state is maintained in
 [MCBV3's design](../firmware/MCBV3/README.md#automatic-indexer-recovery).
 Paths below are under `MCB-project/src/` in MCBV3.
 
-- `CV_TARGET` is the current 15-byte payload. Aim subtracts field-frame
+- `CV_TARGET` is the current 15-byte payload. Aim subtracts raw aim-frame
   odometry from x/y and subtracts the pitch-pivot height from ground-frame z
   before solving ballistics (`subsystems/jetson/AutoAimAndFireCommand.cpp`).
   It holds a received aim for 200 ms. Bit 0 permits an indexer request after
-  `delay_ms - FIRING_LATENCY_TIME` (80 ms); shorter delays execute on the
+  `max(0, delay_ms - FIRING_LATENCY_TIME)`; the wire delay includes
+  indexer latency and alignment wait ([contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision)).
+  Shorter delays execute on the
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
   hit turn, including interruption of a live aim. Clearing bit 2 cancels
@@ -60,7 +63,9 @@ Paths below are under `MCB-project/src/` in MCBV3.
   marks Jetson patrol points without changing these gates; the compiled
   [sim firmware tests](../sim/README.md#mcb-emulator) exercise it clear/set.
 - POSE position, velocity and head yaw use the
-  [shared field frame](#shared-aim-frame). `mcb_x_right` is removed.
+  raw aim frame described in
+  [UART_PROTOCOL message types](UART_PROTOCOL.md#message-types).
+  `mcb_x_right` is removed.
   `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
   timer (nominally 90 Hz and 10 Hz). `odom_status` still reports `ODOM_PODS`.
 - The hit-angle implementation does not yet establish the relative-angle,
@@ -80,17 +85,21 @@ Paths below are under `MCB-project/src/` in MCBV3.
   Chassis yaw is absent from POSE, so the bridge publishes zero for its
   proposed chassis-yaw fields.
 
-### Shared aim frame
+### Aim and navigation frames
 
-Nightly uses the field frame on both sides: POSE, RELOCALIZE and CV_TARGET
-are centred on the field, with x toward blue's base. Deploy the matching
+POSE and CV_TARGET use continuous raw aim odometry; NAV_GOAL and RELOCALIZE
+use separately corrected navigation odometry. RELOCALIZE updates only the
+navigation offset and does not reanchor raw aim. The exact frame roles are
+owned by
+[UART_PROTOCOL](UART_PROTOCOL.md#message-types). Deploy the matching
 firmware and ROS stack together; the unchanged payload length cannot detect
 an axis mismatch. The team's start pose, including red (-4.625, 0), remains
 unmeasured on the field.
 
-The Jetson aims in localization's EKF-fused `odom`. RELOCALIZE moves the MCB's
-raw odometry toward that frame; an in-flight aim remains in the shared frame.
-The residual is MCB drift since the last accepted correction. The current
+Jetson camera/target/aim transforms use raw MCB POSE, independently of the
+EKF and map localization. RELOCALIZE updates only the MCB navigation offset;
+gimbal aim subtracts raw odometry. Raw drift and UART/sample timing still
+affect aim, but navigation corrections cannot move it. The current
 1 ms mailbox can lose a RELOCALIZE arriving alongside CV_TARGET; measure
 that and the UART/read delays on hardware.
 
@@ -158,7 +167,7 @@ ros2 run dji_serial_bridge serial_debug /dev/ttyTHS1 --baud 115200 --log rx.bin
 `test_bridge` waits for `~/pose` and `~/ref_sys` from a running bridge.
 `serial_debug` opens the port itself, so stop the bridge first; it
 defaults to 921600 baud, so always pass `--baud`. Its `--tx` sends a
-`RELOCALIZE` to (5, 3) every second, which moves the MCB's odometry origin:
+`RELOCALIZE` to (5, 3) every second, which moves the MCB's navigation position:
 not on a robot that's driving.
 
 Both diagnostics are C++17. The hex tool intentionally preserves the former

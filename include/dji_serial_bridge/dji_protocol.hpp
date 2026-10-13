@@ -65,8 +65,8 @@ static constexpr size_t CRC8_COVERAGE = offsetof(FrameHeader, crc8);  // == 4
 // x/y it applies to. see UART_PROTOCOL.md for the status code table
 struct __attribute__((packed)) PosePayload
 {
-  float   x;             // chassis X  (field frame, metres)
-  float   y;             // chassis Y  (field frame, metres)
+  float   x;             // chassis X  (raw aim odom, metres)
+  float   y;             // chassis Y  (raw aim odom, metres)
   float   vel_x;         // chassis vX (m/s)
   float   vel_y;         // chassis vY (m/s)
   float   head_pitch;    // gimbal pitch encoder value (radians)
@@ -106,7 +106,7 @@ static_assert(sizeof(NavGoalPayload) == 8, "NavGoalPayload size mismatch");
 // CV_TARGET (id=1) — from ~/cv_target (CVTarget): aim point and fire decision
 // in one frame, so the delay can never pair with an aim point it was not
 // solved for.
-// x/y/z is a WORLD-FRAME POSITION in odom, the field frame (not a root- or
+// x/y/z is a WORLD-FRAME POSITION in raw aim odom (not a root- or
 // camera-frame offset, not a barrel attitude -- Type-C applies its own
 // ballistics on top). Field frame: UART_PROTOCOL.md.
 // No stamp: the MCB runs delay_ms from frame receipt.
@@ -123,7 +123,7 @@ struct __attribute__((packed)) CvTargetPayload
 static_assert(sizeof(CvTargetPayload) == 15, "CvTargetPayload size mismatch");
 
 // RELOCALIZE (id=4) — lidar-estimated robot position from ~/relocalize
-// (PointStamped), sent back to the MCB so it can update its odometry origin.
+// (PointStamped), updates only the MCB navigation offset, never raw aim odom.
 // Mirror of struct Relocalize in JetsonSubsystem.hpp.
 struct __attribute__((packed)) RelocalizePayload
 {
