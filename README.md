@@ -25,19 +25,16 @@ firmware and ROS together; physical acceptance is tracked in [hardware status](.
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
-Remaining CV coordination is in [ROADMAP short todos](../ROADMAP.md#short-todos):
-T31 gates hit turns while tracking. The informational patrol-point flag at
-bit 3 is implemented; the firmware currently ignores it. The MCB team should
-decide whether to use that marker to distinguish Jetson sweeps and hit-turn
-patrol from tracked targets. It does not gate firing. The
+Hit-turn permission follows estimate availability on each Jetson frame; see
+[firmware status](#where-the-firmware-stands). The informational patrol-point
+flag at bit 3 is implemented; firmware currently ignores it. It does not gate firing. The
 [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw) also
 remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
-Reviewed against [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
-on 2026-10-11, plus the informational bit-3 definition and the raw aim and
-navigation split through [MCBV3 290e555](https://github.com/Thornbots/MCBV3/commit/290e555). Sim compiles
+Reviewed against [MCBV3 053285f](https://github.com/Thornbots/MCBV3/commit/053285f)
+on 2026-10-14. Sim compiles
 that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
 Sim's [MCB backend](../sim/README.md#mcb-emulator) owns physical motor feedback
