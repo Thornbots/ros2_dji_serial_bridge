@@ -12,6 +12,9 @@
     # or /dev/ttyUSB0 / /dev/sllidar for CP210x USB adapters.
     device: /dev/ttyTHS1
 
+    # Private simulator transport socket; empty keeps the hardware UART path.
+    sim_uart_socket: ""
+
     # Baud rate in bits-per-second.
     # Must match the MCB firmware (UARTCommunication driver).
     # Supported values: 115200, 230400, 460800, 921600, 2000000, 4000000

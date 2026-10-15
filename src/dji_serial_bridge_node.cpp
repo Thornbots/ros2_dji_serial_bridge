@@ -32,6 +32,7 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -47,6 +48,7 @@
 
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
+#include "dji_serial_bridge/sim_uart.hpp"
 
 #ifdef __APPLE__
 // macOS's termios.h stops at B230400, and its speed_t is the rate itself.
@@ -55,6 +57,8 @@
 #define B2000000 2000000
 #define B4000000 4000000
 #endif
+
+namespace sim_uart = dji_serial_bridge::sim_uart;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper: map an integer baud rate to a POSIX speed_t constant
@@ -107,8 +111,10 @@ public:
     declare_parameter<bool>("enforce_crc", true);
     declare_parameter<int>("diag_interval_s", 5);
     declare_parameter<bool>("debug_log", true);
+    declare_parameter<std::string>("sim_uart_socket", "");
 
     const auto device = get_parameter("device").as_string();
+    const auto sim_uart_socket = get_parameter("sim_uart_socket").as_string();
     const auto baudrate = get_parameter("baudrate").as_int();
     // 8N1: 10 bits on the wire per byte.
     byte_wire_ns_ = 10 * 1000000000LL / std::max<int64_t>(baudrate, 1);
@@ -120,52 +126,61 @@ public:
       throw std::invalid_argument("diag_interval_s must be nonnegative (0 disables)");
     }
 
-    // ── Pre-open device diagnostics ───────────────────────────────────────
-    struct stat sb{};
-    if (::stat(device.c_str(), &sb) != 0) {
-      RCLCPP_FATAL(get_logger(),
-                         "Device '%s' does not exist or cannot be stat'd: %s",
-                         device.c_str(), strerror(errno));
-      throw std::runtime_error("Serial device not found: " + device);
-    }
-    // Check it's a character device
-    if (!S_ISCHR(sb.st_mode)) {
-      RCLCPP_FATAL(get_logger(),
-                         "Path '%s' exists but is NOT a character device (mode=0%o)",
-                         device.c_str(), sb.st_mode);
-      throw std::runtime_error("Not a character device: " + device);
-    }
-    // Warn if we don't have read+write permission
-    if (::access(device.c_str(), R_OK | W_OK) != 0) {
-      RCLCPP_WARN(get_logger(),
-                        "Permission check on '%s' failed: %s  "
-                        "(try: sudo chmod a+rw %s  OR  sudo usermod -aG dialout $USER)",
-                        device.c_str(), strerror(errno), device.c_str());
+    if (!sim_uart_socket.empty()) {
+      bool use_sim_time = false;
+      if (!get_parameter("use_sim_time", use_sim_time) || !use_sim_time) {
+        throw std::invalid_argument("sim_uart_socket requires use_sim_time:=true");
+      }
+      serial_fd_ = sim_uart::connect_socket(sim_uart_socket);
+      sim_uart_mode_ = true;
+      RCLCPP_INFO(get_logger(), "Simulator UART socket '%s' connected (fd=%d)",
+                  sim_uart_socket.c_str(), serial_fd_);
     } else {
-      RCLCPP_INFO(get_logger(),
-                        "Device '%s' exists and is readable/writable", device.c_str());
-    }
+      // ── Pre-open device diagnostics ─────────────────────────────────────
+      struct stat sb{};
+      if (::stat(device.c_str(), &sb) != 0) {
+        RCLCPP_FATAL(get_logger(),
+                     "Device '%s' does not exist or cannot be stat'd: %s",
+                     device.c_str(), strerror(errno));
+        throw std::runtime_error("Serial device not found: " + device);
+      }
+      if (!S_ISCHR(sb.st_mode)) {
+        RCLCPP_FATAL(get_logger(),
+                     "Path '%s' exists but is NOT a character device (mode=0%o)",
+                     device.c_str(), sb.st_mode);
+        throw std::runtime_error("Not a character device: " + device);
+      }
+      if (::access(device.c_str(), R_OK | W_OK) != 0) {
+        RCLCPP_WARN(get_logger(),
+                    "Permission check on '%s' failed: %s  "
+                    "(try: sudo chmod a+rw %s  OR  sudo usermod -aG dialout $USER)",
+                    device.c_str(), strerror(errno), device.c_str());
+      } else {
+        RCLCPP_INFO(get_logger(), "Device '%s' exists and is readable/writable",
+                    device.c_str());
+      }
 
-    // ── Serial port ───────────────────────────────────────────────────────
-    serial_fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
-    if (serial_fd_ < 0) {
-      throw std::runtime_error(
+      // ── Serial port ─────────────────────────────────────────────────────
+      serial_fd_ = ::open(device.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
+      if (serial_fd_ < 0) {
+        throw std::runtime_error(
                 "DjiSerialBridge: failed to open " + device + ": " + strerror(errno));
-    }
-    RCLCPP_INFO(get_logger(),
-                    "Serial port '%s' opened (fd=%d)", device.c_str(), serial_fd_);
+      }
+      RCLCPP_INFO(get_logger(), "Serial port '%s' opened (fd=%d)",
+                  device.c_str(), serial_fd_);
 
-    if (!configure_serial(serial_fd_, static_cast<int>(baudrate))) {
-      ::close(serial_fd_);
-      throw std::runtime_error(
+      if (!configure_serial(serial_fd_, static_cast<int>(baudrate))) {
+        ::close(serial_fd_);
+        serial_fd_ = -1;
+        throw std::runtime_error(
                 "DjiSerialBridge: failed to configure serial port " + device);
+      }
+      RCLCPP_INFO(get_logger(),
+                  "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
+                  baudrate);
+      int fl = fcntl(serial_fd_, F_GETFL);
+      fcntl(serial_fd_, F_SETFL, fl & ~O_NONBLOCK);
     }
-    RCLCPP_INFO(get_logger(),
-                    "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
-                    baudrate);
-    // Clear NONBLOCK so subsequent reads behave normally (poll() handles blocking)
-    int fl = fcntl(serial_fd_, F_GETFL);
-    fcntl(serial_fd_, F_SETFL, fl & ~O_NONBLOCK);
 
     // ── Publishers  (MCB → Jetson) ────────────────────────────────────────
     pose_pub_ = create_publisher<dji_serial_bridge::msg::RobotPose>(
@@ -218,9 +233,10 @@ public:
     RCLCPP_INFO(get_logger(),
                     "═══════════════════════════════════════════════════════════\n"
                     "  MCB serial bridge READY\n"
-                    "  device=%s  baud=%ld  enforce_crc=%s  poll_ms=%d\n"
+                    "  transport=%s  device=%s  socket=%s  baud=%ld  enforce_crc=%s  poll_ms=%d\n"
                     "═══════════════════════════════════════════════════════════",
-                    device.c_str(), baudrate,
+                    sim_uart_mode_ ? "sim_uart" : "serial", device.c_str(),
+                    sim_uart_socket.c_str(), baudrate,
                     enforce_crc_ ? "true" : "false",
                     poll_ms);
   }
@@ -386,6 +402,19 @@ private:
     frame.push_back(static_cast<uint8_t>((crc16 >> 8) & 0xFF));
 
     std::lock_guard<std::mutex> lock(write_mutex_);
+    if (sim_uart_mode_) {
+      try {
+        sim_uart::send_packet(
+          serial_fd_, sim_uart::Packet{sim_tx_sequence_++, now().nanoseconds(), frame});
+      } catch (const std::exception & error) {
+        RCLCPP_ERROR(get_logger(), "send_frame: simulator UART send failed: %s", error.what());
+        return false;
+      }
+      RCLCPP_DEBUG(get_logger(),
+                   "send_frame: msg_type=%u seq=%u payload=%u B frame=%zu B simulator packet OK",
+                   static_cast<unsigned>(msg_type), hdr.seq, payload_len, frame.size());
+      return true;
+    }
     ssize_t written = ::write(serial_fd_, frame.data(), frame.size());
     if (written != static_cast<ssize_t>(frame.size())) {
       RCLCPP_ERROR(get_logger(),
@@ -397,6 +426,40 @@ private:
                      "send_frame: msg_type=%u  seq=%u  payload=%u B  frame=%zu B  OK",
                      static_cast<unsigned>(msg_type), hdr.seq, payload_len, frame.size());
     return true;
+  }
+
+  void process_sim_uart_packet(
+    const sim_uart::Packet & packet, std::vector<uint8_t> & rx_buf,
+    std::vector<int64_t> & rx_read_ns)
+  {
+    if (packet.bytes.empty()) {
+      return;
+    }
+    const int64_t duration_ns =
+      static_cast<int64_t>(packet.bytes.size()) * byte_wire_ns_;
+    if (packet.stamp_ns > std::numeric_limits<int64_t>::max() - duration_ns) {
+      throw std::overflow_error("simulator UART timestamp overflows byte timing");
+    }
+    const uint64_t previous = bytes_rx_.fetch_add(
+      packet.bytes.size(), std::memory_order_relaxed);
+    if (previous == 0) {
+      RCLCPP_INFO(get_logger(), "read_loop: first simulator UART packet received (%zu B)",
+                  packet.bytes.size());
+    }
+    silent_polls_.store(0, std::memory_order_relaxed);
+    rx_buf.insert(rx_buf.end(), packet.bytes.begin(), packet.bytes.end());
+    for (std::size_t i = 0; i < packet.bytes.size(); ++i) {
+      rx_read_ns.push_back(packet.stamp_ns +
+        static_cast<int64_t>(i + 1) * byte_wire_ns_);
+    }
+    const auto frames_before = frames_rx_.load(std::memory_order_relaxed);
+    process_rx_buffer(rx_buf, rx_read_ns);
+    if (!rx_buf.empty() || frames_rx_.load(std::memory_order_relaxed) != frames_before + 1) {
+      throw std::runtime_error("simulator UART packet did not contain one accepted frame");
+    }
+    std::lock_guard<std::mutex> lock(write_mutex_);
+    sim_uart::send_packet(
+      serial_fd_, sim_uart::Packet{packet.sequence, packet.stamp_ns, {}});
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -421,64 +484,87 @@ private:
     // With poll_ms=10 this fires after ~1 second of silence.
     static constexpr uint64_t SILENCE_WARN_POLLS = 100;
 
-    while (running_.load()) {
-      int ret = poll(&pfd, 1, poll_ms);
-      if (ret < 0) {
-        if (errno == EINTR) {
-          continue;
-        }
-        RCLCPP_ERROR(get_logger(), "poll() error: %s", strerror(errno));
-        break;
-      }
-      if (ret == 0) {
-        // poll timed out — no data this interval
-        const uint64_t sil = ++silent_polls_;
-        // Emit a one-time notice on the first prolonged silence so the
-        // user knows bytes are simply not arriving.
-        if (sil == SILENCE_WARN_POLLS) {
-          RCLCPP_WARN(
-            get_logger(),
-            "read_loop: NO DATA from MCB for ~%" PRIu64 " ms  "
-            "(poll_ms=%d × %" PRIu64 " polls).  "
-            "Is the MCB powered/connected and transmitting?",
-            static_cast<uint64_t>(poll_ms) * SILENCE_WARN_POLLS,
-            poll_ms, static_cast<uint64_t>(SILENCE_WARN_POLLS));
-        }
-        continue;
-      }
-
-      if (pfd.revents & POLLIN) {
-        ssize_t n = ::read(serial_fd_, chunk, sizeof(chunk));
-        if (n > 0) {
-          const uint64_t prev = bytes_rx_.fetch_add(
-                        static_cast<uint64_t>(n), std::memory_order_relaxed);
-          // Log first byte arrival and then periodically every 1 KB
-          if (prev == 0) {
-            RCLCPP_INFO(get_logger(),
-                                    "read_loop: first bytes received from MCB! (%zd B)", n);
-          } else if ((prev / 1024) != ((prev + static_cast<uint64_t>(n)) / 1024)) {
-            RCLCPP_DEBUG(get_logger(),
-                                     "read_loop: %lu bytes total rx (latest chunk %zd B)",
-                                     prev + static_cast<uint64_t>(n), n);
+    try {
+      while (running_.load()) {
+        int ret = poll(&pfd, 1, poll_ms);
+        if (ret < 0) {
+          if (errno == EINTR) {
+            continue;
           }
-          silent_polls_.store(0, std::memory_order_relaxed);
-          rx_buf.insert(rx_buf.end(), chunk, chunk + n);
-          rx_read_ns.insert(rx_read_ns.end(), static_cast<size_t>(n), now().nanoseconds());
-        } else if (n < 0 && errno != EAGAIN) {
-          RCLCPP_ERROR(get_logger(), "read() error: %s", strerror(errno));
+          RCLCPP_ERROR(get_logger(), "poll() error: %s", strerror(errno));
           break;
         }
-      }
+        if (ret == 0) {
+          // poll timed out — no data this interval
+          const uint64_t sil = ++silent_polls_;
+          // Emit a one-time notice on the first prolonged silence so the
+          // user knows bytes are simply not arriving.
+          if (sil == SILENCE_WARN_POLLS) {
+            RCLCPP_WARN(
+              get_logger(),
+              "read_loop: NO DATA from MCB for ~%" PRIu64 " ms  "
+              "(poll_ms=%d × %" PRIu64 " polls).  "
+              "Is the MCB powered/connected and transmitting?",
+              static_cast<uint64_t>(poll_ms) * SILENCE_WARN_POLLS,
+              poll_ms, static_cast<uint64_t>(SILENCE_WARN_POLLS));
+          }
+          continue;
+        }
 
-      if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
-        RCLCPP_ERROR(get_logger(),
-                             "read_loop: poll() returned error event 0x%x on fd — "
-                             "serial device disconnected?",
-                             pfd.revents);
-        break;
-      }
+        if (sim_uart_mode_) {
+          if (pfd.revents & (POLLIN | POLLHUP)) {
+            const auto packet = sim_uart::receive_packet(serial_fd_, true);
+            if (packet) {
+              process_sim_uart_packet(*packet, rx_buf, rx_read_ns);
+            } else if (pfd.revents & POLLHUP) {
+              throw std::runtime_error("simulator UART peer closed the socket");
+            }
+          }
+          if (pfd.revents & (POLLERR | POLLNVAL)) {
+            throw std::runtime_error("simulator UART poll reported a socket error");
+          }
+          if ((pfd.revents & POLLHUP) && !(pfd.revents & POLLIN)) {
+            throw std::runtime_error("simulator UART poll reported peer shutdown");
+          }
+          continue;
+        }
 
-      process_rx_buffer(rx_buf, rx_read_ns);
+        if (pfd.revents & POLLIN) {
+          ssize_t n = ::read(serial_fd_, chunk, sizeof(chunk));
+          if (n > 0) {
+            const uint64_t prev = bytes_rx_.fetch_add(
+                          static_cast<uint64_t>(n), std::memory_order_relaxed);
+            // Log first byte arrival and then periodically every 1 KB
+            if (prev == 0) {
+              RCLCPP_INFO(get_logger(),
+                                      "read_loop: first bytes received from MCB! (%zd B)", n);
+            } else if ((prev / 1024) != ((prev + static_cast<uint64_t>(n)) / 1024)) {
+              RCLCPP_DEBUG(get_logger(),
+                                       "read_loop: %lu bytes total rx (latest chunk %zd B)",
+                                       prev + static_cast<uint64_t>(n), n);
+            }
+            silent_polls_.store(0, std::memory_order_relaxed);
+            rx_buf.insert(rx_buf.end(), chunk, chunk + n);
+            rx_read_ns.insert(rx_read_ns.end(), static_cast<size_t>(n), now().nanoseconds());
+          } else if (n < 0 && errno != EAGAIN) {
+            RCLCPP_ERROR(get_logger(), "read() error: %s", strerror(errno));
+            break;
+          }
+        }
+
+        if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) {
+          RCLCPP_ERROR(get_logger(),
+                               "read_loop: poll() returned error event 0x%x on fd — "
+                               "serial device disconnected?",
+                               pfd.revents);
+          break;
+        }
+
+        process_rx_buffer(rx_buf, rx_read_ns);
+      }
+    } catch (const std::exception & error) {
+      running_.store(false);
+      RCLCPP_ERROR(get_logger(), "read_loop stopped: %s", error.what());
     }
 
     RCLCPP_INFO(get_logger(),
@@ -843,7 +929,9 @@ private:
 
   int serial_fd_{-1};
   uint8_t tx_seq_{0};
+  uint64_t sim_tx_sequence_{0};
   std::mutex write_mutex_;
+  bool sim_uart_mode_{false};
   bool enforce_crc_{true};
   bool debug_log_{true};
   std::atomic<bool> running_{false};
