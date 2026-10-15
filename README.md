@@ -68,12 +68,12 @@ Paths below are under `MCB-project/src/` in MCBV3.
   `mcb_x_right` is removed.
   `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
   timer (nominally 90 Hz and 10 Hz). `odom_status` still reports `ODOM_PODS`.
-- The hit-angle implementation does not yet establish the relative-angle,
-  since-last-frame contract in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
-  `util/hitTracker.hpp` scales radian IMU yaw by `PI/180`, and resets `isHit`
-  every control cycle. `JetsonSubsystem.cpp` samples it for REF_SYS at 10 Hz,
-  so a hit between samples can be missed. T31 includes unit/frame agreement
-  and latching; physical hit direction remains unvalidated.
+- REF_SYS hit angles use radians relative to the current chassis heading,
+  positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
+  `util/hitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
+  tests cover nonzero head and chassis yaw. It still resets `isHit` every
+  control cycle, so a hit between 10 Hz REF_SYS samples can be missed.
+  T31 latching remains open; physical hit direction remains unvalidated.
 - The UART receiver has one mailbox slot: a later frame can overwrite an
   unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
   with CV_TARGET traffic before relying on corrections while moving.
