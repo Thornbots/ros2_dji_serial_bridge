@@ -55,7 +55,7 @@ Paths below are under `MCB-project/src/` in MCBV3.
   Shorter delays execute on the
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
-  hit turn, including interruption of a live aim. Clearing bit 2 cancels
+  hit turn, including interruption of a patrol-point aim. Clearing bit 2 cancels
   that turn. The Jetson clears bit 2 while holding any target estimate,
   including coasting/predicted or unconverged tracks, and sets it with no
   estimate, including patrol. It decides on every frame with no cooldown. Bit 3
