@@ -21,7 +21,7 @@ wire change is two commits in two repos, landed together.
 
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
-firmware and ROS together; physical acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
+firmware and ROS together; physical acceptance is tracked in [hardware status](../docs/JAZZY_FLASH.md#hardware-status).
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
@@ -108,7 +108,7 @@ that and the UART/read delays on hardware.
 not require chassis yaw. The [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw)
 remains unapplied. The bridge stamp contract is in
 [MCB to Jetson](UART_PROTOCOL.md#mcb--jetson); hardware measurements and
-moving-shooter acceptance are in [ROADMAP track B](../ROADMAP.md#b-hit-while-we-move).
+moving-shooter acceptance are in [ROADMAP track B](../docs/ROADMAP.md#b-hit-while-we-move).
 
 ## Topics
 
