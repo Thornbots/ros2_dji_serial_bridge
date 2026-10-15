@@ -120,20 +120,36 @@ is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 The node has no opinion on the other end of any of them. `thornbots_pkg`'s
 `mcb_relay` and the CV pipeline connect directly, remapped as needed.
 
+Simulator UART mode additionally accepts `SimulationRelocalize` on
+`/sim/lockstep/relocalize_command`. Its header records the logical decision
+tick; its embedded `PointStamped` retains the correction's application stamp.
+The bridge sends the unchanged RELOCALIZE payload with decision time in the
+private simulator envelope, then acknowledges `/sim/lockstep/relocalize_uart`.
+Explicit no-correction decisions acknowledge without sending a UART frame.
+
 ## Parameters
 
 Defaults live in `config/dji_bridge_params.yaml`, which the launch file loads
-under the `/**` wildcard key. Only `device`, `baudrate` and `debug_log` are
-launch arguments; the other three change only in the YAML, or via a whole
-replacement file with `params_file:=`. `diag_interval_s:=0` on the command
-line is silently ignored.
+under the `/**` wildcard key. `device`, `baudrate`, `debug_log`,
+`sim_uart_socket`, and `use_sim_time` are launch arguments; other parameters
+change in the YAML or via a whole replacement file with `params_file:=`.
 
 - `device` (string) : serial device path, e.g. `/dev/ttyTHS1`
+- `sim_uart_socket` (string) : empty uses the hardware UART; a nonempty Unix
+  `SOCK_SEQPACKET` path selects the private simulator transport and requires
+  `use_sim_time:=true`
 - `baudrate` (int) : bits per second, e.g. 115200
 - `read_poll_ms` (int) : poll() timeout in ms (10 is fine)
 - `enforce_crc` (bool) : drop frames failing CRC (default true)
 - `diag_interval_s` (int) : seconds between diagnostic summaries; 0 disables, negatives are rejected
 - `debug_log` (bool) : log each REF_SYS RX and each PING RX/TX at INFO (default true)
+
+The simulator transport wraps each unchanged DJI wire frame in a private
+`SUAR` version 1 envelope with sequence, signed ROS-time nanoseconds, and
+payload length. The bridge acknowledges one CRC-accepted frame after parser
+dispatch with an empty packet carrying the same sequence and stamp. This
+does not acknowledge downstream ROS consumption. This envelope is not part
+of the MCB UART protocol.
 
 ## Diagnostics
 

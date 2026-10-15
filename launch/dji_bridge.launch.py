@@ -38,6 +38,14 @@ def generate_launch_description():
             default_value='/dev/ttyTHS1',
             description='Serial device path (e.g. /dev/ttyTHS1 or /dev/ttyUSB0)'),
         DeclareLaunchArgument(
+            'sim_uart_socket',
+            default_value='',
+            description='Private simulator UART SOCK_SEQPACKET path; empty uses hardware UART'),
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='false',
+            description='Use ROS simulation time (required with sim_uart_socket)'),
+        DeclareLaunchArgument(
             'baudrate',
             default_value='115200',
             description='Serial baud rate in bits-per-second'),
@@ -60,6 +68,8 @@ def generate_launch_description():
                 LaunchConfiguration('params_file'),
                 {
                     'device':   LaunchConfiguration('device'),
+                    'sim_uart_socket': LaunchConfiguration('sim_uart_socket'),
+                    'use_sim_time': LaunchConfiguration('use_sim_time'),
                     'baudrate': LaunchConfiguration('baudrate'),
                     'debug_log': LaunchConfiguration('debug_log'),
                 },
