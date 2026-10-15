@@ -34,6 +34,7 @@
 #include <cstring>
 #include <limits>
 #include <mutex>
+#include <optional>
 #include <stdexcept>
 #include <thread>
 #include <vector>
@@ -380,7 +381,8 @@ private:
   bool send_frame(
     McbMsgType msg_type,
     const uint8_t *payload,
-    uint16_t payload_len)
+    uint16_t payload_len,
+    std::optional<int64_t> capture_ns = std::nullopt)
   {
     FrameHeader hdr{};
     hdr.head = FRAME_HEAD;
@@ -405,7 +407,8 @@ private:
     if (sim_uart_mode_) {
       try {
         sim_uart::send_packet(
-          serial_fd_, sim_uart::Packet{sim_tx_sequence_++, now().nanoseconds(), frame});
+          serial_fd_, sim_uart::Packet{
+          sim_tx_sequence_++, capture_ns.value_or(now().nanoseconds()), frame});
       } catch (const std::exception & error) {
         RCLCPP_ERROR(get_logger(), "send_frame: simulator UART send failed: %s", error.what());
         return false;
@@ -864,7 +867,8 @@ private:
       (msg->turn_to_hit ? 0x04 : 0x00) | (msg->patrol ? 0x08 : 0x00);
 
     const bool ok = send_frame(McbMsgType::CV_TARGET,
-                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p),
+                                   rclcpp::Time(msg->header.stamp).nanoseconds());
     if (ok) {
       cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
