@@ -241,7 +241,7 @@ joint only: `root` stays heading-fixed, so localization doesn't read it.
 | 1   | 2    | uint16  | `stage_time_remaining`   | seconds left in the current stage         |
 | 3   | 2    | uint16  | `robot_hp`               | current robot HP                          |
 | 5   | 1    | uint8   | `robot_id`               | normalised to red-team numbering (hero=1) |
-| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current heading of last hit; 123 if none since last frame |
+| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current chassis heading toward last hit, positive CCW (REP 103); 123 if none |
 | 10  | 1    | uint8   | `booleans`               | 8 flags, MSB first, table below           |
 
 | Bit | Firmware name            | `RefSysStatus` field       | Meaning                           |
@@ -255,6 +255,9 @@ joint only: `root` stays heading-fixed, so localization doesn't read it.
 | 1   | `chassisHasPower`        | `chassis_has_power`        | chassis power output on           |
 | 0   | `gimbalHasPower`         | `gimbal_has_power`         | gimbal power output on            |
 
+The hit angle is relative to the chassis heading when REF_SYS is sent, not
+the gimbal heading. Left is positive and right negative, wrapped to
+`[-pi, pi]`; 123 means no hit since the preceding REF_SYS frame.
 The node unpacks the byte into the eight named booleans.
 
 ---
