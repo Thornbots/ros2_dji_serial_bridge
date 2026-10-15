@@ -20,5 +20,5 @@ uint16 delay_ms              # desired exit delay after receipt, including index
 # type_c_based_patrol|fire -- table in UART_PROTOCOL.md.
 bool fire                    # request this aim point to exit delay_ms after receipt
 bool type_c_based_patrol     # true lets the MCB patrol on its own, false stops it
-bool turn_to_hit             # true lets the MCB turn toward where it got hit
+bool turn_to_hit             # true permits a firmware hit turn only while Jetson holds no target estimate
 bool patrol                  # informational: this point comes from Jetson patrol

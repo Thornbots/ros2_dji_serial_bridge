@@ -59,7 +59,9 @@ Paths below are under `MCB-project/src/` in MCBV3.
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
   hit turn, including interruption of a live aim. Clearing bit 2 cancels
-  that turn. The Jetson's per-frame hit-turn decision remains open. Bit 3
+  that turn. The Jetson clears bit 2 while holding any target estimate,
+  including coasting/predicted or unconverged tracks, and sets it with no
+  estimate, including patrol. It decides on every frame with no cooldown. Bit 3
   marks Jetson patrol points without changing these gates; the compiled
   [sim firmware tests](../sim/README.md#mcb-emulator) exercise it clear/set.
 - POSE position, velocity and head yaw use the
@@ -71,9 +73,11 @@ Paths below are under `MCB-project/src/` in MCBV3.
 - REF_SYS hit angles use radians relative to the current chassis heading,
   positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
   `util/hitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
-  tests cover nonzero head and chassis yaw. It still resets `isHit` every
-  control cycle, so a hit between 10 Hz REF_SYS samples can be missed.
-  T31 latching remains open; physical hit direction remains unvalidated.
+  tests cover nonzero head and chassis yaw. It retains the latest world hit
+  bearing until a complete REF_SYS write succeeds, independently of the
+  one-cycle event used by auto-aim/UI. A report uses the current chassis
+  heading; the next report carries 123 unless another hit occurred.
+  Physical hit direction remains unvalidated.
 - The UART receiver has one mailbox slot: a later frame can overwrite an
   unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
   with CV_TARGET traffic before relying on corrections while moving.
