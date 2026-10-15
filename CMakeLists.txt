@@ -25,6 +25,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PanelDetectionArray.msg"
   "msg/TargetState.msg"
   "msg/Ping.msg"
+  "msg/SimulationRelocalize.msg"
   DEPENDENCIES std_msgs geometry_msgs
 )
 

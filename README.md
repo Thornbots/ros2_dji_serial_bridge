@@ -119,6 +119,13 @@ is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 The node has no opinion on the other end of any of them. `thornbots_pkg`'s
 `mcb_relay` and the CV pipeline connect directly, remapped as needed.
 
+Simulator UART mode additionally accepts `SimulationRelocalize` on
+`/sim/lockstep/relocalize_command`. Its header records the logical decision
+tick; its embedded `PointStamped` retains the correction's application stamp.
+The bridge sends the unchanged RELOCALIZE payload with decision time in the
+private simulator envelope, then acknowledges `/sim/lockstep/relocalize_uart`.
+Explicit no-correction decisions acknowledge without sending a UART frame.
+
 ## Parameters
 
 Defaults live in `config/dji_bridge_params.yaml`, which the launch file loads

@@ -41,11 +41,13 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <std_msgs/msg/header.hpp>
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
 #include "dji_serial_bridge/msg/ping.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
 #include "dji_serial_bridge/msg/ref_sys_status.hpp"
+#include "dji_serial_bridge/msg/simulation_relocalize.hpp"
 
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
@@ -207,6 +209,15 @@ public:
     relocalize_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
             "~/relocalize", 10,
             std::bind(&DjiSerialBridge::relocalize_callback, this, _1));
+
+    if (sim_uart_mode_) {
+      sim_relocalize_uart_pub_ = create_publisher<std_msgs::msg::Header>(
+        "/sim/lockstep/relocalize_uart", 10);
+      sim_relocalize_sub_ = create_subscription<
+        dji_serial_bridge::msg::SimulationRelocalize>(
+        "/sim/lockstep/relocalize_command", 10,
+        std::bind(&DjiSerialBridge::sim_relocalize_callback, this, _1));
+    }
 
     ping_sub_ = create_subscription<dji_serial_bridge::msg::Ping>(
             "~/ping_to_mcb", 10,
@@ -908,6 +919,29 @@ private:
     }
   }
 
+  void sim_relocalize_callback(
+    const dji_serial_bridge::msg::SimulationRelocalize::SharedPtr msg)
+  {
+    if (msg->has_correction) {
+      RelocalizePayload p{};
+      p.x = static_cast<float>(msg->correction.point.x);
+      p.y = static_cast<float>(msg->correction.point.y);
+
+      const bool ok = send_frame(
+        McbMsgType::RELOCALIZE,
+        reinterpret_cast<const uint8_t *>(&p), sizeof(p),
+        rclcpp::Time(msg->header.stamp).nanoseconds());
+      if (!ok) {
+        throw std::runtime_error("Failed to send simulator RELOCALIZE");
+      }
+      relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    std_msgs::msg::Header ack;
+    ack = msg->header;
+    sim_relocalize_uart_pub_->publish(ack);
+  }
+
   // The wire carries no stamp, so the header stops here.
   void ping_callback(const dji_serial_bridge::msg::Ping::SharedPtr msg)
   {
@@ -950,6 +984,9 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr relocalize_sub_;
+  rclcpp::Subscription<
+    dji_serial_bridge::msg::SimulationRelocalize>::SharedPtr sim_relocalize_sub_;
+  rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr sim_relocalize_uart_pub_;
   rclcpp::Subscription<dji_serial_bridge::msg::Ping>::SharedPtr ping_sub_;
 };
 
