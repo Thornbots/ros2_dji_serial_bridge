@@ -47,6 +47,8 @@
 
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
+#include "dji_serial_bridge/msg/mcb_data.hpp"
+#include "dji_serial_bridge/node_factory.hpp"
 
 #ifdef __APPLE__
 // macOS's termios.h stops at B230400, and its speed_t is the rate itself.
@@ -172,10 +174,12 @@ public:
             "~/pose", rclcpp::SensorDataQoS());
     ref_sys_pub_ = create_publisher<dji_serial_bridge::msg::RefSysStatus>(
             "~/ref_sys", rclcpp::SensorDataQoS());
+    mcb_data_pub_ = create_publisher<dji_serial_bridge::msg::MCBData>(
+            "~/mcb_data", rclcpp::QoS(100).reliable());
     ping_pub_ = create_publisher<dji_serial_bridge::msg::Ping>("~/ping_from_mcb", 10);
 
     RCLCPP_INFO(get_logger(),
-                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb");
+                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb  ~/mcb_data");
 
     // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
     using std::placeholders::_1;
@@ -585,6 +589,9 @@ private:
       case McbMsgType::REF_SYS:
         handle_ref_sys(payload, len, stamp);
         break;
+      case McbMsgType::MCB_DATA:
+        handle_mcb_data(payload, len, stamp);
+        break;
       case McbMsgType::PING:
         handle_ping(payload, len, stamp);
         break;
@@ -609,6 +616,20 @@ private:
       case 3: return "i2c dead, drivetrain odometry";
       default: return "undefined code";
     }
+  }
+
+  void handle_mcb_data(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
+  {
+    if (len < 1 || len > MCB_DATA_MAX_BYTES + 1) {
+      RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+                          "MCB_DATA: unexpected payload length %u", len);
+      return;
+    }
+    dji_serial_bridge::msg::MCBData msg;
+    msg.header.stamp = stamp;
+    msg.channel = payload[0];
+    msg.data.assign(payload + 1, payload + len);
+    mcb_data_pub_->publish(msg);
   }
 
   void handle_pose(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
@@ -854,6 +875,7 @@ private:
   rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr pose_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::Ping>::SharedPtr ping_pub_;
+  rclcpp::Publisher<dji_serial_bridge::msg::MCBData>::SharedPtr mcb_data_pub_;
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
@@ -861,8 +883,14 @@ private:
   rclcpp::Subscription<dji_serial_bridge::msg::Ping>::SharedPtr ping_sub_;
 };
 
+std::shared_ptr<rclcpp::Node> make_serial_bridge(const rclcpp::NodeOptions & options)
+{
+  return std::make_shared<DjiSerialBridge>(options);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
+#ifndef DJI_SERIAL_BRIDGE_NO_MAIN
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
@@ -876,3 +904,5 @@ int main(int argc, char *argv[])
   rclcpp::shutdown();
   return 0;
 }
+
+#endif

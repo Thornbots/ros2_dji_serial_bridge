@@ -39,6 +39,7 @@ enum class McbMsgType : uint16_t
   POSE       = 2,    // MCB → Jetson : ~/pose        (PosePayload)
   REF_SYS    = 3,    // MCB → Jetson : ~/ref_sys     (RefSysPayload)
   RELOCALIZE = 4,    // Jetson → MCB : ~/relocalize  (RelocalizePayload)
+  MCB_DATA   = 6,    // MCB → Jetson : ~/mcb_data (channel + opaque bytes)
   PING       = 5,    // both ways    : ~/ping_to_mcb, ~/ping_from_mcb  (PingPayload)
 };
 
@@ -141,3 +142,5 @@ struct __attribute__((packed)) PingPayload
   uint8_t number;
 };
 static_assert(sizeof(PingPayload) == 1, "PingPayload size mismatch");
+
+static constexpr size_t MCB_DATA_MAX_BYTES = 48;
