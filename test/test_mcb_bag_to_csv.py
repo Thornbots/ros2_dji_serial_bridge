@@ -79,12 +79,12 @@ class TestDecode(unittest.TestCase):
     def test_reads_synthetic_rosbag2_with_explicit_message_definition(self):
         try:
             import numpy as np
-            from rosbags.rosbag2 import Writer
+            from rosbags.rosbag2 import StoragePlugin, Writer
             from rosbags.typesys import Stores, get_types_from_msg, get_typestore
         except ImportError:
             self.skipTest('rosbags is not installed')
 
-        typestore = get_typestore(Stores.ROS2_HUMBLE)
+        typestore = get_typestore(Stores.ROS2_JAZZY)
         typestore.register(get_types_from_msg(converter.MSG_DEFINITION, converter.MSGTYPE))
         message_type = typestore.types[converter.MSGTYPE]
         header_type = typestore.types['std_msgs/msg/Header']
@@ -93,20 +93,22 @@ class TestDecode(unittest.TestCase):
             header_type(time_type(123, 987654321), ''), 9,
             np.array([0, 255, 128, 1], dtype=np.uint8),
         )
-        with tempfile.TemporaryDirectory() as tmp:
-            bag = Path(tmp) / 'bag'
-            with Writer(bag) as writer:
-                connection = writer.add_connection(
-                    converter.TOPIC, converter.MSGTYPE, typestore=typestore
-                )
-                writer.write(
-                    connection, 123987654321,
-                    typestore.serialize_cdr(message, converter.MSGTYPE),
-                )
-            decoded = list(converter.read_records(bag))
-        output = io.StringIO()
-        converter.write_rows(decoded, output, converter.parse_struct_format('<HBB'))
-        self.assertIn('123,987654321,9,65280,128,1', output.getvalue())
+        for version, storage in ((8, StoragePlugin.SQLITE3), (9, StoragePlugin.MCAP)):
+            with self.subTest(version=version, storage=storage):
+                with tempfile.TemporaryDirectory() as tmp:
+                    bag = Path(tmp) / 'bag'
+                    with Writer(bag, version=version, storage_plugin=storage) as writer:
+                        connection = writer.add_connection(
+                            converter.TOPIC, converter.MSGTYPE, typestore=typestore
+                        )
+                        writer.write(
+                            connection, 123987654321,
+                            typestore.serialize_cdr(message, converter.MSGTYPE),
+                        )
+                    decoded = list(converter.read_records(bag))
+                output = io.StringIO()
+                converter.write_rows(decoded, output, converter.parse_struct_format('<HBB'))
+                self.assertIn('123,987654321,9,65280,128,1', output.getvalue())
 
 
 if __name__ == '__main__':

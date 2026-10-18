@@ -199,7 +199,7 @@ installed default is `~/logs/thornbots-run<N>/bag/` on the robot. For example:
 rsync -a robot:~/logs/thornbots-run12/bag/ ./thornbots-run12-bag/
 python3 -m venv .venv-mcb-bag
 . .venv-mcb-bag/bin/activate
-python -m pip install rosbags==0.9.23
+python -m pip install rosbags==0.11.8
 python ros2_dji_serial_bridge/tools/mcb_bag_to_csv.py ./thornbots-run12-bag \
   --channel 1 --format '<Hff' --names counter,x,y -o channel-1.csv
 ```

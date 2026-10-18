@@ -101,17 +101,21 @@ def read_records(path: Path, topic: str = TOPIC) -> Iterable[object]:
             'python -m pip install rosbags'
         ) from exc
 
-    typestore = get_typestore(Stores.ROS2_HUMBLE)
+    typestore = get_typestore(Stores.ROS2_JAZZY)
     typestore.register(get_types_from_msg(MSG_DEFINITION, MSGTYPE))
-    with AnyReader([path], default_typestore=typestore) as reader:
-        connections = [
-            connection for connection in reader.connections if connection.topic == topic
-        ]
-        if not connections:
-            raise RuntimeError(f'bag has no {topic} topic')
-        for connection, timestamp, raw in reader.messages(connections=connections):
-            del timestamp
-            yield reader.deserialize(raw, connection.msgtype)
+    from rosbags.highlevel import AnyReaderError
+    try:
+        with AnyReader([path], default_typestore=typestore) as reader:
+            connections = [
+                connection for connection in reader.connections if connection.topic == topic
+            ]
+            if not connections:
+                raise RuntimeError(f'bag has no {topic} topic')
+            for connection, timestamp, raw in reader.messages(connections=connections):
+                del timestamp
+                yield reader.deserialize(raw, connection.msgtype)
+    except AnyReaderError as exc:
+        raise RuntimeError(f'cannot read bag: {exc}') from exc
 
 
 def _channel_arg(value: str) -> int:
