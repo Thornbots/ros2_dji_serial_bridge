@@ -21,23 +21,20 @@ wire change is two commits in two repos, landed together.
 
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
-firmware and ROS together; physical acceptance is tracked in [hardware status](../JAZZY_FLASH.md#hardware-status).
+firmware and ROS together; physical acceptance is tracked in [hardware status](../docs/JAZZY_FLASH.md#hardware-status).
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
-Remaining CV coordination is in [ROADMAP short todos](../ROADMAP.md#short-todos):
-T31 gates hit turns while tracking. The informational patrol-point flag at
-bit 3 is implemented; the firmware currently ignores it. The MCB team should
-decide whether to use that marker to distinguish Jetson sweeps and hit-turn
-patrol from tracked targets. It does not gate firing. The
+Hit-turn permission follows estimate availability on each Jetson frame; see
+[firmware status](#where-the-firmware-stands). The informational patrol-point
+flag at bit 3 is implemented; firmware currently ignores it. It does not gate firing. The
 [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw) also
 remains unapplied; current heading-fixed aiming does not require it.
 
 ### Where the firmware stands
 
-Reviewed against [MCBV3 86c2241](https://github.com/Thornbots/MCBV3/commit/86c2241)
-on 2026-10-11, plus the informational bit-3 definition and the raw aim and
-navigation split through [MCBV3 290e555](https://github.com/Thornbots/MCBV3/commit/290e555). Sim compiles
+Reviewed against [MCBV3 053285f](https://github.com/Thornbots/MCBV3/commit/053285f)
+on 2026-10-14. Sim compiles
 that checkout's C++ control code; it no longer
 ports a historical revision in Python. See [MCB emulator](../sim/README.md#mcb-emulator).
 Sim's [MCB backend](../sim/README.md#mcb-emulator) owns physical motor feedback
@@ -58,8 +55,10 @@ Paths below are under `MCB-project/src/` in MCBV3.
   Shorter delays execute on the
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
-  hit turn, including interruption of a live aim. Clearing bit 2 cancels
-  that turn. The Jetson's per-frame hit-turn decision remains open. Bit 3
+  hit turn, including interruption of a patrol-point aim. Clearing bit 2 cancels
+  that turn. The Jetson clears bit 2 while holding any target estimate,
+  including coasting/predicted or unconverged tracks, and sets it with no
+  estimate, including patrol. It decides on every frame with no cooldown. Bit 3
   marks Jetson patrol points without changing these gates; the compiled
   [sim firmware tests](../sim/README.md#mcb-emulator) exercise it clear/set.
 - POSE position, velocity and head yaw use the
@@ -68,12 +67,14 @@ Paths below are under `MCB-project/src/` in MCBV3.
   `mcb_x_right` is removed.
   `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
   timer (nominally 90 Hz and 10 Hz). `odom_status` still reports `ODOM_PODS`.
-- The hit-angle implementation does not yet establish the relative-angle,
-  since-last-frame contract in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
-  `util/hitTracker.hpp` scales radian IMU yaw by `PI/180`, and resets `isHit`
-  every control cycle. `JetsonSubsystem.cpp` samples it for REF_SYS at 10 Hz,
-  so a hit between samples can be missed. T31 includes unit/frame agreement
-  and latching; physical hit direction remains unvalidated.
+- REF_SYS hit angles use radians relative to the current chassis heading,
+  positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
+  `util/hitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
+  tests cover nonzero head and chassis yaw. It retains the latest world hit
+  bearing until a complete REF_SYS write succeeds, independently of the
+  one-cycle event used by auto-aim/UI. A report uses the current chassis
+  heading; the next report carries 123 unless another hit occurred.
+  Physical hit direction remains unvalidated.
 - The UART receiver has one mailbox slot: a later frame can overwrite an
   unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
   with CV_TARGET traffic before relying on corrections while moving.
@@ -107,7 +108,7 @@ that and the UART/read delays on hardware.
 not require chassis yaw. The [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw)
 remains unapplied. The bridge stamp contract is in
 [MCB to Jetson](UART_PROTOCOL.md#mcb--jetson); hardware measurements and
-moving-shooter acceptance are in [ROADMAP track B](../ROADMAP.md#b-hit-while-we-move).
+moving-shooter acceptance are in [ROADMAP track B](../docs/ROADMAP.md#b-hit-while-we-move).
 
 ## Topics
 

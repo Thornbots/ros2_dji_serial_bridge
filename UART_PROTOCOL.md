@@ -118,6 +118,10 @@ ignored by firmware; it does not gate bit 0 or otherwise change firing. Bit 1
 is MCB patrol permission, while bit 3 identifies the source of this point.
 The bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS's.
 Bits 1 and 2 reach the MCB with every frame.
+The Jetson clears bit 2 whenever it holds a target estimate, including a
+coasting/predicted track during brief occlusion and an unconverged estimate.
+It sets bit 2 only with no estimate, including Jetson patrol. There is no
+cooldown; the next target frame cancels any firmware hit turn.
 Every frame is an aim point: the Jetson decides aim and fire itself, and
 the MCB aims at these points while they are valid. Bits 1 and 2 separately
 permit firmware patrol after expiry and interruption toward a hit. With no target the Jetson
@@ -241,7 +245,7 @@ joint only: `root` stays heading-fixed, so localization doesn't read it.
 | 1   | 2    | uint16  | `stage_time_remaining`   | seconds left in the current stage         |
 | 3   | 2    | uint16  | `robot_hp`               | current robot HP                          |
 | 5   | 1    | uint8   | `robot_id`               | normalised to red-team numbering (hero=1) |
-| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current heading of last hit; 123 if none since last frame |
+| 6   | 4    | float32 | `delta_angle_got_hit_in` | radians from current chassis heading toward last hit, positive CCW (REP 103); 123 if none |
 | 10  | 1    | uint8   | `booleans`               | 8 flags, MSB first, table below           |
 
 | Bit | Firmware name            | `RefSysStatus` field       | Meaning                           |
@@ -255,6 +259,12 @@ joint only: `root` stays heading-fixed, so localization doesn't read it.
 | 1   | `chassisHasPower`        | `chassis_has_power`        | chassis power output on           |
 | 0   | `gimbalHasPower`         | `gimbal_has_power`         | gimbal power output on            |
 
+The hit angle is relative to the chassis heading when REF_SYS is sent, not
+the gimbal heading. Left is positive and right negative, wrapped to
+`[-pi, pi]`; 123 means no hit since the preceding REF_SYS frame.
+Firmware retains the latest hit bearing across control cycles until a
+REF_SYS frame successfully reports it. Multiple hits before that report
+replace the pending bearing; a following report without a new hit carries 123.
 The node unpacks the byte into the eight named booleans.
 
 ---
