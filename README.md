@@ -113,7 +113,7 @@ moving-shooter acceptance are in [ROADMAP track B](../docs/ROADMAP.md#b-hit-whil
 ## Topics
 
 One per message ID, two for `PING`: `~/nav_goal`, `~/cv_target`, `~/pose`,
-`~/ref_sys`, `~/relocalize`, `~/ping_to_mcb`, `~/ping_from_mcb`. Types and directions are in the summary table in
+`~/ref_sys`, `~/relocalize`, `~/ping_to_mcb`, `~/ping_from_mcb`, `~/mcb_data`. Types and directions are in the summary table in
 `UART_PROTOCOL.md`. They live in the node's private namespace, so `~/nav_goal`
 is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 
@@ -181,3 +181,33 @@ are unaffected.
 and PTY transport gtests plus ament lint. The parser fixtures preserve the
 former Python diagnostic's bytes and printed error lines. No hardware or
 running ROS graph is needed for these unit tests.
+
+## Firmware data over WiFi
+
+For live inspection, connect Foxglove to `ws://<robot IP>:8765` over robot
+Wi-Fi and add `/dji_serial_bridge/mcb_data` to a Raw Messages panel. Enable
+`ENABLE_FOXGLOVE=true` as described in [startup use](../isaac-ros-startup/README.md#use). The message exposes the UART
+send-start timestamp, channel, and raw byte array. Choose the channel and
+interpret the bytes using the firmware struct for that channel; the channel
+and reserved values are defined in [`UART_PROTOCOL.md`](UART_PROTOCOL.md).
+
+For offline decoding, copy a completed run after the robot stack has stopped.
+The startup service writes bags under `$LOG_DIR/thornbots-run<N>/bag/`; its
+installed default is `~/logs/thornbots-run<N>/bag/` on the robot. For example:
+
+```bash
+rsync -a robot:~/logs/thornbots-run12/bag/ ./thornbots-run12-bag/
+python3 -m venv .venv-mcb-bag
+. .venv-mcb-bag/bin/activate
+python -m pip install rosbags==0.11.8
+python ros2_dji_serial_bridge/tools/mcb_bag_to_csv.py ./thornbots-run12-bag \
+  --channel 1 --format '<Hff' --names counter,x,y -o channel-1.csv
+```
+
+Run the tool from a host Python environment; it reads MCAP and db3 rosbag2
+directories without ROS installed. Supply the exact Python `struct` format
+from the firmware, with an explicit `<` (little-endian), `>` (big-endian), or
+`!` (network-order) prefix. It rejects records whose byte length does not
+match the format rather than guessing. Byte-string fields are written in
+hexadecimal. Omit `--channel` to decode all channels only when their payload
+layouts are identical; otherwise select one channel per CSV export.

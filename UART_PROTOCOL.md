@@ -38,8 +38,10 @@ retransmission, acknowledgement or flow control in either direction.
 | 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 90 Hz         |
 | 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | 10 Hz         |
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
+| 6  | `MCB_DATA`   | MCB → Jetson  | channel + opaque data | 1–49 | `~/mcb_data` | `dji_serial_bridge/msg/MCBData` | on demand |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 
+MCB_DATA is an on-demand data channel for custom firmware, not telemetry or ROS logging.
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs 0-5 match `enum UartMessage` in the firmware's
 `JetsonSubsystem.hpp` on MCBV3's `position-based-cv` branch
@@ -216,6 +218,53 @@ are gimbal encoder values and are unaffected. The node copies the byte through
 without validating it against the table. Transitions are logged: INFO back to
 pods, ERROR into 2, WARN into 1 or 3.
 
+### MCB_DATA (id=6) — firmware-owned opaque data
+
+Payload: one `uint8 channel`, followed by 0–48 opaque data bytes. The payload
+length is 1–49; the frame is 10–58 bytes. No terminator, timestamp, struct
+padding, or schema is added to the data. Invalid lengths are dropped, as are
+bad CRCs under `enforce_crc`. Unknown-type handling is unchanged.
+
+| Channel | Owner / bytes |
+| --- | --- |
+| 0 | Text convenience: up to 48 text bytes, no NUL; formatted text truncates |
+| 1–254 | Firmware team: channel assignment, versioning, units and serialization |
+| 255 | Transport: 4-byte little-endian cumulative rejected-record count, saturating at UINT32_MAX |
+
+Counted rejections include a full queue, oversized data, null nonempty input,
+and attempts to enqueue reserved channel 255. Records copy into a four-entry
+FIFO without allocation; a rejected record does not overwrite queued data.
+A changed drop count is reported in an idle gap, alternating with queued data
+under continued overload. Counts reset at MCB boot; there is no acknowledgement,
+retry after a link failure, or guarantee of delivery across a reboot.
+
+**TX bound.** `DJISerial::initialize` sets UART1 to 115200 baud, 8N1;
+`taproot/project.xml` gives it a 256-byte TX buffer. A POSE frame is 34 bytes
+(2.952 ms). `JetsonSubsystem::refresh` reserves telemetry every 10 ms.
+The scheduler budgets ceil(wire time in ms) plus a 1 ms guard for low-priority
+frames, after the preceding frame has completed. After a 3 ms POSE reservation,
+6 ms of rounded wire time plus the guard fits: at most 69 frame bytes (59 data
+bytes). The chosen conservative bound is 48 data bytes: a 58-byte frame takes
+5.035 ms, rounds to 6 ms, and fits the gap. Larger records must be split or
+rejected by the caller; the transport does not fragment them. The TX buffer is
+not the limiting factor. Late scheduler calls defer data rather than cross the
+next telemetry deadline. Software wire-time tracking also covers the final UART
+shift-register byte and gives the hosted fixture the same scheduling constraint.
+PING echoes share this guard; the latest pending PING replaces an unsent echo.
+They cannot take a telemetry slot. The MCB's always-zero `seq` is unchanged.
+
+Published as `MCBData` on `~/mcb_data` with reliable, volatile, depth-100 QoS.
+`header.stamp` estimates frame send start using the same last-byte read time
+minus UART wire-time contract as POSE; it is not when firmware sampled its data.
+`header.frame_id` is empty (opaque bytes have no assumed coordinate frame).
+Custom code must include any capture time or coordinate metadata it needs in
+its channel schema. The bridge publishes every valid record without interpreting
+its bytes; queue sizes and the physical wire rate bound load.
+
+Startup records this topic in the run's MCAP bag on SSD. Live wireless viewing
+and offline host CSV decoding are described in the
+[firmware data workflow](README.md#firmware-data-over-wifi).
+
 ### Proposed: POSE chassis yaw
 
 Not applied: the bytes above are what both sides send today. `RobotPose`
@@ -275,7 +324,8 @@ The node unpacks the byte into the eight named booleans.
 
 1-byte payload, 10-byte frame. The same ID both ways; the direction tells
 them apart. Jetson → MCB: subscribed on `~/ping_to_mcb`, header discarded.
-The MCB sends every Ping it gets straight back (`JetsonSubsystem::refresh`);
+The MCB queues an echo from `JetsonSubsystem::refresh` for an idle TX gap;
+a newer PING replaces an echo still pending (telemetry keeps priority).
 MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
 `dji_serial_bridge/msg/Ping`, depth-10 reliable.
 
