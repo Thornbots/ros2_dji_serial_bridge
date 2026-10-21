@@ -76,6 +76,11 @@ install(DIRECTORY config launch
 
 # ── Tests ──────────────────────────────────────────────────────────
 if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME test_cv_target_boundary
+    COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cv_target_boundary.py
+  )
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_diagnostic_frames test/test_diagnostic_frames.cpp)
   target_include_directories(test_diagnostic_frames PRIVATE include)

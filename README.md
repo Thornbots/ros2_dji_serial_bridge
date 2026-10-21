@@ -120,6 +120,10 @@ is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 The node has no opinion on the other end of any of them. `thornbots_pkg`'s
 `mcb_relay` and the CV pipeline connect directly, remapped as needed.
 
+CV decisions expire at the bridge write boundary; see the
+[decision freshness policy](UART_PROTOCOL.md#cv-decision-freshness) for clock
+requirements, rejected stamps and serial queuing limits.
+
 ## Parameters
 
 Defaults live in `config/dji_bridge_params.yaml`, which the launch file loads
