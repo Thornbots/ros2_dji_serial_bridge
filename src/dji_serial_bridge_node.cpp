@@ -792,7 +792,8 @@ private:
       (msg->turn_to_hit ? 0x04 : 0x00) | (msg->patrol ? 0x08 : 0x00);
 
     const bool ok = send_frame(McbMsgType::CV_TARGET,
-                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p), &msg->header.stamp);
+                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p),
+      &msg->header.stamp);
     if (ok) {
       cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {

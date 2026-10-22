@@ -1,5 +1,16 @@
 // Copyright 2026 Thornbots
-// SPDX-License-Identifier: Apache-2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 #include <sys/ioctl.h>
 #include <unistd.h>
 
@@ -30,7 +41,7 @@ struct CVTarget
   uint16_t delay_ms{119};
   bool fire{true}, type_c_based_patrol{true}, turn_to_hit{true}, patrol{true};
 };
-}
+}  // namespace dji_serial_bridge::msg
 
 static int pending_bytes = 0;
 static int ioctl_rc = 0;
@@ -158,8 +169,8 @@ int main()
   std::promise<void> started;
   auto ready = started.get_future();
   auto queued = std::async(std::launch::async, [&]() {
-      started.set_value();
-      bridge.cv_target_callback(msg);
+        started.set_value();
+        bridge.cv_target_callback(msg);
     });
   ready.wait();
   assert(bridge.clock_reads == 0);
