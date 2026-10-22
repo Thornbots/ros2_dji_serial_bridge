@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -47,6 +48,7 @@
 
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
+#include "dji_serial_bridge/cv_target_freshness.hpp"
 
 #ifdef __APPLE__
 // macOS's termios.h stops at B230400, and its speed_t is the rate itself.
@@ -163,9 +165,8 @@ public:
     RCLCPP_INFO(get_logger(),
                     "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
                     baudrate);
-    // Clear NONBLOCK so subsequent reads behave normally (poll() handles blocking)
-    int fl = fcntl(serial_fd_, F_GETFL);
-    fcntl(serial_fd_, F_SETFL, fl & ~O_NONBLOCK);
+    // Keep O_NONBLOCK: a validated decision must never wait in a blocking write.
+    // poll() handles receive readiness; see UART_PROTOCOL.md#cv-decision-freshness.
 
     // ── Publishers  (MCB → Jetson) ────────────────────────────────────────
     pose_pub_ = create_publisher<dji_serial_bridge::msg::RobotPose>(
@@ -364,8 +365,10 @@ private:
   bool send_frame(
     McbMsgType msg_type,
     const uint8_t *payload,
-    uint16_t payload_len)
+    uint16_t payload_len,
+    const builtin_interfaces::msg::Time * decision_stamp = nullptr)
   {
+    std::lock_guard<std::mutex> lock(write_mutex_);
     FrameHeader hdr{};
     hdr.head = FRAME_HEAD;
     hdr.dataLength = payload_len;
@@ -385,7 +388,18 @@ private:
     frame.push_back(static_cast<uint8_t>(crc16 & 0xFF));
     frame.push_back(static_cast<uint8_t>((crc16 >> 8) & 0xFF));
 
-    std::lock_guard<std::mutex> lock(write_mutex_);
+    if (msg_type == McbMsgType::CV_TARGET) {
+      int pending = 0;
+      // No software TX backlog may sit ahead of this unstamped wire decision.
+      if (::ioctl(serial_fd_, TIOCOUTQ, &pending) != 0 || pending != 0 ||
+        decision_stamp == nullptr || !dji_bridge::cv_target_is_fresh(
+          decision_stamp->sec, decision_stamp->nanosec, now().nanoseconds()))
+      {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "Dropping expired/invalid CV_TARGET or busy/unavailable serial TX queue");
+        return false;
+      }
+    }
     ssize_t written = ::write(serial_fd_, frame.data(), frame.size());
     if (written != static_cast<ssize_t>(frame.size())) {
       RCLCPP_ERROR(get_logger(),
@@ -778,7 +792,8 @@ private:
       (msg->turn_to_hit ? 0x04 : 0x00) | (msg->patrol ? 0x08 : 0x00);
 
     const bool ok = send_frame(McbMsgType::CV_TARGET,
-                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p),
+      &msg->header.stamp);
     if (ok) {
       cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {

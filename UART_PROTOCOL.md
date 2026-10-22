@@ -76,7 +76,7 @@ An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 
 Transmitted from the subscriber callback: one ROS message in, one frame out.
 No timer, no retransmission; the wire rate is the publisher's rate. Fields are
-copied without clamping or validation.
+copied without clamping; CV_TARGET has the freshness gate below.
 
 ### NAV_GOAL (id=0) — navigation goal
 
@@ -151,6 +151,34 @@ own gravity, drag and muzzle geometry. It is not a root- or camera-frame
 offset and not a barrel attitude. Velocity
 and spin are not on the wire; they are ROS-internal on `/cv/target_state`
 (`TargetState.msg`).
+
+### CV decision freshness
+
+The bridge drops the entire CV_TARGET (including aim-only/patrol frames) unless
+its original decision stamp is nonzero, well formed and less than 200 ms old
+at the final write boundary. Exactly 200 ms is expired. This matches the
+firmware target-validity interval as a Jetson-side age budget; firmware still
+starts its separate 200 ms validity timer at receipt. No stamp, payload,
+flag or `delay_ms` is rewritten, and expiry does not send a replacement fire
+command. Firmware physical firing gates and receipt expiry still apply.
+
+The check runs after acquiring the write mutex and building the frame, directly
+before a single nonblocking write. A nonempty or unreadable serial output queue
+also drops the frame: no previous software TX backlog may delay it. There is
+no wait/retry after validation; EAGAIN and short writes fail. This bounds
+executor/mutex/write queuing on the Jetson. Normal 24-byte transmission takes
+about 2.1 ms at 115200 baud. Driver/hardware stalls after write acceptance and
+MCB scheduling are outside this software bound; end-to-end expiry would
+require a shared clock/deadline wire contract.
+
+Producer and bridge must use the same ROS clock and `use_sim_time` setting.
+Negative seconds, nanoseconds outside [0, 1e9), zero/unstarted clocks, future
+stamps (including after a backward clock reset), and ages of 200 ms or more
+are rejected. There is no future tolerance or wall-time fallback. Simulation
+may use positive subsecond stamps; pausing ROS time pauses decision age too.
+An epoch mismatch normally appears expired or future and is rejected; stamps
+carry no clock identifier, so coincident numeric times from different clocks
+cannot be detected here. Configure the clock consistently across the graph.
 
 ### RELOCALIZE (id=4) — lidar position fix
 
