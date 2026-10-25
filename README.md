@@ -21,7 +21,7 @@ wire change is two commits in two repos, landed together.
 
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
-firmware and ROS together; physical acceptance is tracked in [hardware status](../docs/JAZZY_FLASH.md#hardware-status).
+firmware and ROS together; physical acceptance is tracked in the [ROADMAP](../docs/ROADMAP.md#later-needs-a-robot).
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
