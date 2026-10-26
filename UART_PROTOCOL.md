@@ -256,9 +256,12 @@ zero (bytes read before a simulated clock starts) is dropped with a warning.
 | 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
 | 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
 
-Codes 1–3 are reserved: current firmware always sends `ODOM_PODS` (0),
-including when pod readings freeze. A frozen pod reading is therefore not
-flagged on the wire.
+Codes 1 and 3 are reserved: there is no drivetrain fallback. On the sentry,
+firmware sends `ODOM_I2C_DEAD` (2) after 50 ms (`POD_STALE_MS`) without a
+successful Pico read (a latched or hung poll, or a dead bus), and `ODOM_PODS`
+(0) again on the next successful read; other robots always send 0
+([MCBV3 #103](https://github.com/Thornbots/MCBV3/pull/103)). A frozen value in
+successful reads, such as only x stopping, is still not flagged.
 
 `x/y`, velocity and `head_yaw` are in the raw field-aligned aim frame (above).
 RELOCALIZE never changes them. Taproot IMU yaw is non-negative, but the
@@ -266,7 +269,7 @@ gimbal yaw estimator extrapolates it without wrapping. POSE applies
 `std::fmod(estimated_yaw + start_yaw, 2*pi)`, which preserves sign, so
 `head_yaw` can be negative. Consumers needing `[0, 2pi)` must wrap it.
 
-Code 2 means the fields have no source behind them. Codes 1 and 3 mean they
+Code 2 means the fields have no fresh source behind them (they repeat the last pod values). Codes 1 and 3 mean they
 are drivetrain-derived and drift under wheel slip. `head_pitch` and `head_yaw`
 are independent of the odometry status and are unaffected. The node copies
 the byte through without validating it against the table. Transitions are logged: INFO back to
