@@ -21,13 +21,14 @@ wire change is two commits in two repos, landed together.
 
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
-firmware and ROS together; physical acceptance is tracked in [hardware status](../docs/JAZZY_FLASH.md#hardware-status).
+firmware and ROS together; physical acceptance is tracked in the [ROADMAP](../docs/ROADMAP.md#later-needs-a-robot).
 The earlier asks against `position-based-cv` `0885a69` describe old firmware,
 not the current integration.
 
-Hit-turn permission follows estimate availability on each Jetson frame; see
-[firmware status](#where-the-firmware-stands). The informational patrol-point
-flag at bit 3 is implemented; firmware currently ignores it. It does not gate firing. The
+Hit-turn permission follows target versus idle frames; see the
+[CV_TARGET contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision).
+The existing `patrol` bit now marks an idle/non-target point. Firmware still
+ignores it; the payload, messages and firmware are unchanged. The
 [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw) also
 remains unapplied; current heading-fixed aiming does not require it.
 
@@ -55,11 +56,12 @@ Paths below are under `MCB-project/src/` in MCBV3.
   Shorter delays execute on the
   next control cycle. The pending shot is restarted by each new aim frame.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
-  hit turn, including interruption of a patrol-point aim. Clearing bit 2 cancels
-  that turn. The Jetson clears bit 2 while holding any target estimate,
-  including coasting/predicted or unconverged tracks, and sets it with no
-  estimate, including patrol. It decides on every frame with no cooldown. Bit 3
-  marks Jetson patrol points without changing these gates; the compiled
+  hit turn, including interruption of an idle aim. Clearing bit 2 cancels
+  that turn. Target frames clear bit 2, including coasting/predicted or
+  unconverged estimates; every non-firing idle frame sets bits 2 and 3.
+  There is no Jetson sweep patrol and no silence between targets: idle frames
+  preserve firmware hit-turn permission. Bit 3 is informational and does not
+  change these firmware gates; the compiled
   [sim firmware tests](../sim/README.md#mcb-emulator) exercise it clear/set.
 - POSE position, velocity and head yaw use the
   raw aim frame described in
@@ -119,6 +121,14 @@ is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 
 The node has no opinion on the other end of any of them. `thornbots_pkg`'s
 `mcb_relay` and the CV pipeline connect directly, remapped as needed.
+
+The producer limits firing by newest detection age and coasts aim before
+switching to idle frames; see the
+[CV_TARGET contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision)
+for the freshness limits and flag semantics. CV decisions also expire at the
+bridge write boundary; see the
+[decision freshness policy](UART_PROTOCOL.md#cv-decision-freshness) for clock
+requirements, rejected stamps and serial queuing limits.
 
 ## Parameters
 

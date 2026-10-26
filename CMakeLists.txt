@@ -12,6 +12,7 @@ endif()
 find_package(ament_cmake        REQUIRED)
 find_package(rclcpp             REQUIRED)
 find_package(std_msgs           REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs      REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(yaml-cpp REQUIRED)
@@ -26,7 +27,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetState.msg"
   "msg/Ping.msg"
   "msg/MCBData.msg"
-  DEPENDENCIES std_msgs geometry_msgs
+  DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 
 # Make generated headers available before the executable target is defined.
@@ -77,6 +78,11 @@ install(DIRECTORY config launch
 
 # ── Tests ──────────────────────────────────────────────────────────
 if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME test_cv_target_boundary
+    COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cv_target_boundary.py
+  )
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_diagnostic_frames test/test_diagnostic_frames.cpp)
   target_include_directories(test_diagnostic_frames PRIVATE include)
