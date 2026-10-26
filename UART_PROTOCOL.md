@@ -4,8 +4,9 @@ Reference for every message crossing the serial link. Jetson side:
 `include/dji_serial_bridge/dji_protocol.hpp`. MCB side: `JetsonSubsystem.hpp`
 in the firmware repo.
 
-Changing anything here is also a firmware change; see README.md for the
-coordination notes and the currently pending ones.
+Wire layout or firmware behavior changes require firmware coordination; see
+[MCB firmware coordination](README.md#mcb-firmware-coordination). The idle-frame
+semantics below leave the wire layout and firmware unchanged.
 
 ## Framing
 
@@ -117,23 +118,35 @@ drive controller. No publisher in this workspace: `mcb_relay` wires up
 | 0   | `fire`                | request this aim point to exit `delay_ms` after receipt |
 | 1   | `type_c_based_patrol` | MCB permission to patrol on its own; clear stops it |
 | 2   | `turn_to_hit`         | MCB permission to turn toward where it got hit  |
-| 3   | `patrol`              | this aim point came from Jetson patrol, including hit-turn patrol |
+| 3   | `patrol`              | idle/non-target aim point |
 
 Bits 4-7 are reserved, sent as 0. Bit 3 is informational and currently
-ignored by firmware; it does not gate bit 0 or otherwise change firing. Bit 1
-is MCB patrol permission, while bit 3 identifies the source of this point.
-The bridge packs the byte from `CVTarget`'s booleans, as it unpacks REF_SYS's.
-Bits 1 and 2 reach the MCB with every frame.
-The Jetson clears bit 2 whenever it holds a target estimate, including a
-coasting/predicted track during brief occlusion and an unconverged estimate.
-It sets bit 2 only with no estimate, including Jetson patrol. There is no
-cooldown; the next target frame cancels any firmware hit turn.
-Every frame is an aim point: the Jetson decides aim and fire itself, and
-the MCB aims at these points while they are valid. Bits 1 and 2 separately
-permit firmware patrol after expiry and interruption toward a hit. With no target the Jetson
-patrols, sending points to sweep the gun with `fire` clear
-(`thornbots_pkg` `patrol_enabled`, on by default). With that off it sends
-nothing between targets.
+ignored by firmware; it does not gate bit 0 or otherwise change firing. The
+`patrol` field name and bit position are unchanged: it now marks an idle,
+non-target point, not a Jetson sweep patrol. Bit 1 remains separate permission
+for firmware patrol after aim expiry. The bridge packs these booleans without
+interpreting them, as it unpacks REF_SYS's.
+
+Bits 1 and 2 reach the MCB with every frame. The Jetson clears bit 2 while
+holding a target estimate, including a coasting/predicted track during brief
+occlusion and an unconverged estimate. Every idle/non-target frame sets bit 2
+(`turn_to_hit`) and bit 3 (`patrol`), with `fire` clear. There is no cooldown;
+the next target frame clears bit 2 and cancels any firmware hit turn.
+
+The Jetson decides aim and fire itself. It requests fire only while the newest
+detection is at most 0.15 s old (`fire_max_state_age_s`); this is a necessary
+freshness condition, not permission to bypass other firing gates. It continues
+aiming without firing through a brief detection gap until the 0.5 s target
+timeout (`target_timeout_s`). Prediction does not refresh detection age.
+
+There is no Jetson patrol. After the target timeout, the Jetson keeps sending
+non-firing idle aim points instead of going silent, preserving hit-turn
+permission in the last frame's flags. Idle looks can hold the last enemy
+position, follow the gun after a firmware hit turn, check a lidar track or face
+the enemy starting zone; their selection belongs to `thornbots_pkg` (see the
+[lidar-guided aiming design](../docs/lidar-guided-aiming-2026-10-25.md#where-the-head-looks-with-no-camera-target)).
+The MCB aims at received points while valid; bits 1 and 2 separately permit
+firmware patrol after expiry and interruption toward a hit.
 
 No stamp crosses the wire (dropped 2026-10-03 to match MCBV3
 `position-based-cv`'s 15-byte `CvTarget`): the MCB runs `delay_ms` from frame receipt.
@@ -160,7 +173,10 @@ and spin are not on the wire; they are ROS-internal on `/cv/target_state`
 
 ### CV decision freshness
 
-The bridge drops the entire CV_TARGET (including aim-only/patrol frames) unless
+The detection-age fire limit above is enforced by the producer; the bridge
+only sees the decision stamp and cannot infer the newest detection age.
+
+The bridge drops the entire CV_TARGET (including aim-only/idle frames) unless
 its original decision stamp is nonzero, well formed and less than 200 ms old
 at the final write boundary. Exactly 200 ms is expired. This matches the
 firmware target-validity interval as a Jetson-side age budget; firmware still
