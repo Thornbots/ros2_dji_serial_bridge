@@ -42,12 +42,9 @@ retransmission, acknowledgement or flow control in either direction.
 
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs 0-5 match `enum UartMessage` in the firmware's
-`JetsonSubsystem.hpp` on MCBV3's `position-based-cv` branch
-(Thornbots/MCBV3#74); MCBV3 `708b8d6` used the old names (`ROS_MSG`,
-`CV_MSG`, `POSE_MSG`, `REF_SYS_MSG`). Topics are in the node's private
-namespace: `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped.
-Rates are the firmware's at `0885a69`: nine POSE then one REF_SYS on one
-10 ms timer.
+`JetsonSubsystem.hpp`. Topics are in the node's private namespace:
+`~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped. The firmware
+sends nine POSE then one REF_SYS on one 10 ms timer.
 
 **Field-aligned frames.** Both wire frames use REP-103 metres/radians,
 z up, (0, 0) initially at the field
@@ -77,6 +74,15 @@ An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 Transmitted from the subscriber callback: one ROS message in, one frame out.
 No timer, no retransmission; the wire rate is the publisher's rate. Fields are
 copied without clamping; CV_TARGET has the freshness gate below.
+
+### MCB receive
+
+The MCB stores incoming frames in one `mostRecentMessage` slot, shared by
+all message types. `getMsg` consumes it only when the type and payload size
+match its caller. A second frame received before consumption overwrites the
+first, including PING, RELOCALIZE and NAV_GOAL. There is no queue or
+application acknowledgement; successful Jetson transmission does not prove
+that the MCB applied a command.
 
 ### NAV_GOAL (id=0) — navigation goal
 
@@ -222,7 +228,7 @@ zero (bytes read before a simulated clock starts) is dropped with a warning.
 | 8   | 4    | float32 | `vel_x`      | chassis X velocity, m/s                  |
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
 | 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
-| 20  | 4    | float32 | `head_yaw`   | gimbal yaw, field, CCW, `[0, 2pi)`, rad  |
+| 20  | 4    | float32 | `head_yaw`   | gimbal yaw, field, CCW, `(-2pi, 2pi)`, rad  |
 | 24  | 1    | uint8   | `odom_status`| which source produced x/y/vel, below     |
 
 | Code | `RobotPose` constant         | Source of `x/y/vel_x/vel_y`                  |
@@ -232,16 +238,20 @@ zero (bytes read before a simulated clock starts) is dropped with a warning.
 | 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
 | 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
 
+Codes 1–3 are reserved: current firmware always sends `ODOM_PODS` (0),
+including when pod readings freeze. A frozen pod reading is therefore not
+flagged on the wire.
+
 `x/y`, velocity and `head_yaw` are in the raw field-aligned aim frame (above).
-RELOCALIZE never changes them. At
-`0885a69` they were x right, y forward of the power-on spot, and
-`head_yaw` zero at IMU boot. The firmware always sends `ODOM_PODS` today.
-README.md "Where the firmware stands" has the line refs.
+RELOCALIZE never changes them. Taproot IMU yaw is non-negative, but the
+gimbal yaw estimator extrapolates it without wrapping. POSE applies
+`std::fmod(estimated_yaw + start_yaw, 2*pi)`, which preserves sign, so
+`head_yaw` can be negative. Consumers needing `[0, 2pi)` must wrap it.
 
 Code 2 means the fields have no source behind them. Codes 1 and 3 mean they
 are drivetrain-derived and drift under wheel slip. `head_pitch` and `head_yaw`
-are gimbal encoder values and are unaffected. The node copies the byte through
-without validating it against the table. Transitions are logged: INFO back to
+are independent of the odometry status and are unaffected. The node copies
+the byte through without validating it against the table. Transitions are logged: INFO back to
 pods, ERROR into 2, WARN into 1 or 3.
 
 ### Proposed: POSE chassis yaw
@@ -256,8 +266,8 @@ already has `chassis_yaw` and `chassis_yaw_rate`, published as 0. Proposed
 | 25  | 4    | float32 | `chassis_yaw`      | chassis heading, world, same sense and zero as `head_yaw`, radians |
 | 29  | 4    | float32 | `chassis_yaw_rate` | its rate, rad/s                            |
 
-33-byte payload. At `MCBV3@708b8d6` the firmware already has the heading as
-`getYawAngleRelativeWorld() - getYawEncoderValue()` (the negative of
+33-byte payload. The firmware has the field heading as
+`getYawAngleRelativeWorld() + getStartYaw() - getYawEncoderValue()` (the negative of
 `AutoDriveCommand`'s `referenceAngle`), and the rate as the turret IMU's yaw
 rate less the yaw motor's. `thornbots_pkg` turns it into the `chassis_yaw`
 joint only: `root` stays heading-fixed, so localization doesn't read it.
@@ -303,7 +313,9 @@ The node unpacks the byte into the eight named booleans.
 
 1-byte payload, 10-byte frame. The same ID both ways; the direction tells
 them apart. Jetson → MCB: subscribed on `~/ping_to_mcb`, header discarded.
-The MCB sends every Ping it gets straight back (`JetsonSubsystem::refresh`);
+The MCB attempts an echo when `JetsonSubsystem::refresh` consumes a Ping
+and its transmitter is ready; [MCB receive](#mcb-receive) can lose a Ping
+before consumption, and a busy transmitter can drop the echo;
 MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
 `dji_serial_bridge/msg/Ping`, depth-10 reliable.
 
