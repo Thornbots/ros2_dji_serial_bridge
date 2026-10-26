@@ -221,3 +221,9 @@ from the firmware, with an explicit `<` (little-endian), `>` (big-endian), or
 match the format rather than guessing. Byte-string fields are written in
 hexadecimal. Omit `--channel` to decode all channels only when their payload
 layouts are identical; otherwise select one channel per CSV export.
+
+For the sentry's Pico odometry I2C channels (16 and 17),
+`tools/mcb_odom_i2c_to_csv.py BAG [-o PREFIX]` writes `PREFIX_records.csv`
+(one row per logged I2C attempt with the nearest `/odom` by stamp) and
+`PREFIX_summary.csv`, then prints an overview. Record the bag with both
+`/odom` and `/dji_serial_bridge/mcb_data`.

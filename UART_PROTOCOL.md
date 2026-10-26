@@ -283,7 +283,13 @@ bad CRCs under `enforce_crc`. Unknown-type handling is unchanged.
 | --- | --- |
 | 0 | Text convenience: up to 48 text bytes, no NUL; formatted text truncates |
 | 1–254 | Firmware team: channel assignment, versioning, units and serialization |
+| 16 | MCBV3 Pico odometry I2C attempt: 36 bytes, `struct` `<IIBBH4fff` |
+| 17 | MCBV3 Pico odometry I2C 1 Hz summary: 48 bytes, `struct` `<II8HIIIIIHH` |
 | 255 | Transport: 4-byte little-endian cumulative rejected-record count, saturating at UINT32_MAX |
+
+Channels 16/17 field meanings and send policy:
+[MCBV3 odometry I2C diagnostics](../firmware/MCBV3/README.md#odometry-i2c-diagnostics);
+`tools/mcb_odom_i2c_to_csv.py` decodes them.
 
 Counted rejections include a full queue, oversized data, null nonempty input,
 and attempts to enqueue reserved channel 255. Records copy into a four-entry
