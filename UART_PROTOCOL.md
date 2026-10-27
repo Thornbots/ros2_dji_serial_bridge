@@ -254,8 +254,10 @@ zero (bytes read before a simulated clock starts) is dropped with a warning.
 | 2    | `ODOM_I2C_DEAD`              | none: I2C bus dead, no pod data, no fallback |
 | 3    | `ODOM_I2C_DEAD_DRIVETRAIN`   | drivetrain odometry, pods lost to a dead I2C |
 
-Codes 1–3 are reserved: current firmware always sends `ODOM_PODS` (0),
-including when pod readings freeze. A frozen pod reading is therefore not
+Codes 1 and 3 are reserved. Sentry firmware sends `ODOM_I2C_DEAD` (2) before
+its first successful Pico read and once the last successful read is 500 ms
+old, otherwise `ODOM_PODS` (0). Pico values refresh about every 260 ms. A read
+that succeeds with frozen values still reports 0, so frozen pods are not
 flagged on the wire.
 
 `x/y`, velocity and `head_yaw` are in the raw field-aligned aim frame (above).
