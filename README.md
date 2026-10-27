@@ -68,7 +68,8 @@ Paths below are under `MCB-project/src/` in MCBV3.
   [UART_PROTOCOL message types](UART_PROTOCOL.md#message-types).
   `mcb_x_right` is removed.
   `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
-  timer (nominally 90 Hz and 10 Hz). `odom_status` still reports `ODOM_PODS`.
+  timer (nominally 90 Hz and 10 Hz). `odom_status` reports `ODOM_PODS` or a
+  stale-Pico `ODOM_I2C_DEAD` ([codes](UART_PROTOCOL.md#message-types)).
 - REF_SYS hit angles use radians relative to the current chassis heading,
   positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
   `util/hitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
