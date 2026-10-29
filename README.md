@@ -22,12 +22,19 @@ wire change is two commits in two repos, landed together.
 **Pending MMM change:** implement the MCB-owned mapping states and bounded
 three-leg PING exchanges in the [PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
 Replace unconditional echoes: 0 replies only in Main; odd requests originate
-on the MCB; even requests originate on the Jetson; final legs terminate.
-Enforce forward/locked head, drive/LED/beep and Done power-off behavior there.
+on the MCB; even requests originate on the Jetson. MCB echoes every received
+2/4, changing state only once from a legal source state; Jetson ignores echoes
+after its final leg. Odd-message quiet/retry rules remain unchanged.
+Enforce forward/locked head, the 0.4 m/s mapping drive cap, drive/LED/beep and
+Done power-off behavior there. Done has no head-down pose. Another team binds
+the MCB start/save triggers; those bindings are outside this change.
 The sim MCB emulator also needs this behavior. Neither implementation is part
 of the Jetson coordinator change. Do not deploy MMM until they agree; ACK of
 save is immediate receipt and cannot guarantee that asynchronous storage has
-finished. The bridge has no MMM state or acknowledgement logic.
+finished. Jetson shuts down only after a successful validated Ready save;
+failure leaves it running and incomplete snapshots never shut it down. MCB
+powers off its own side independently, which can still interrupt storage if
+it removes Jetson power. The bridge has no MMM state or acknowledgement logic.
 
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy

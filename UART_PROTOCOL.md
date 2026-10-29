@@ -349,16 +349,17 @@ changes. The bridge remains a pure translator; Jetson coordination belongs to
 | --- | --- | --- | --- |
 | 0 | J | Main-only link check | J→C 0, C→J 0; no third leg |
 | 1 | C | Start mapping | C→J 1, J→C 1, C→J 1; J stops echoing |
-| 2 | J | Ready at captured start | J→C 2, C→J 2, J→C 2; C stops echoing |
+| 2 | J | Ready at captured start | J→C 2, C→J 2, J→C 2; C echoes again, J ignores |
 | 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3; J stops echoing |
-| 4 | J | Mapping / away from start | J→C 4, C→J 4, J→C 4; C stops echoing |
+| 4 | J | Mapping / away from start | J→C 4, C→J 4, J→C 4; C echoes again, J ignores |
 
 Only C owns the states. Main --1--> Setup mapping --2--> Ready to save;
 Ready to save --4--> Mapping --2--> Ready to save. Ready to save --3--> Done;
 Mapping --3--> Save incomplete, immediately back to Mapping. Setup disables
 drive and looks forward. Ready gives green LED/1 Hz beep, forward head and
-slow drive. Mapping locks the forward head and uses slow drive. Done lowers
-the head, disables drive and permits power-off. C replies to 0 only in Main;
+slow drive capped at 0.4 m/s. Mapping locks the forward head and uses the same
+drive cap. Done disables drive and permits power-off, with no head-down pose.
+C replies to 0 only in Main;
 it ignores 0 elsewhere. Zero never changes state. Unknown numbers are ignored.
 
 J publishes 0 once per wall second. Even transactions allow one outstanding
@@ -368,8 +369,10 @@ late-after-timeout and duplicate even echoes are ignored. Timeout logs an
 error and the coordinator retries the latest pose condition after a five-second
 quiet interval. A completed/timed-out even number cannot be reused for five
 seconds. A changed pose condition waits for the outstanding transaction to end.
-C must make repeated even requests idempotent, including recovery after an
-uncertain timeout; it must suppress the final leg and never create an echo loop.
+C echoes every received 2/4, including retries and final legs: it cannot
+distinguish them. It changes state only once from a legal source state;
+repeated requests remain idempotent, including recovery after an uncertain
+timeout. J ignores echoes when it is not waiting for that number, ending the exchange.
 
 There is no sequence/transaction field. J treats an odd number as fresh only
 after at least five wall seconds without receiving that same number. It echoes
@@ -388,8 +391,13 @@ same-number odd request. Arbitrarily delayed final legs and fresh requests
 are indistinguishable on this wire; delivery/exactly-once execution across
 coordinator or MCB restarts is not guaranteed. On coordinator restart begin a
 new attempt from MCB Main. Disable other PING publishers/diagnostics while MMM
-runs. Ack means receipt, **never successful save or durable storage**; Done
-can permit power-off before the asynchronous Jetson save finishes.
+runs. Ack means receipt, **never successful save or durable storage**. J treats
+3 as a Ready save only when its last completed even exchange was 2 and its
+local start gate still passes; otherwise it takes an incomplete snapshot.
+After a successful validated save (SAVE OK), J invokes its configured shutdown
+command. Save failure leaves J running for recovery; snapshots never shut it
+down. C powers off its own side independently, so Done can still interrupt
+storage if that also removes Jetson power before the save finishes.
 
 ---
 
