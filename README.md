@@ -83,7 +83,7 @@ Paths below are under `MCB-project/src/` in MCBV3.
   stale-Pico `ODOM_I2C_DEAD` ([codes](UART_PROTOCOL.md#message-types)).
 - REF_SYS hit angles use radians relative to the current chassis heading,
   positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
-  `util/hitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
+  `util/HitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
   tests cover nonzero head and chassis yaw. It retains the latest world hit
   bearing until a complete REF_SYS write succeeds, independently of the
   one-cycle event used by auto-aim/UI. A report uses the current chassis
