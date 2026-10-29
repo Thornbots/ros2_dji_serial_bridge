@@ -160,7 +160,11 @@ its configured latency and calibration limits live in
 [MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
 A delay shorter than that latency requests indexing immediately; physical
 exit still takes time. `delay_ms` = 0 with `fire` set means request now;
-`fire` clear means `delay_ms` is meaningless.
+`fire` clear means `delay_ms` is meaningless. While a request is pending the
+MCB holds that frame and reads no newer one, so the following 40 Hz frames
+cannot cancel the shot. The sentry's latency is 20 ms (timed on the robot),
+and Jetson never sends `fire` with `delay_ms` under 25
+([`min_fire_delay_s`](../thornbots_pkg/README.md#point_to_cv_target)).
 
 `x/y/z` is a world-frame position in metres in raw aim `odom` (z up).
 The firmware subtracts its never-relocalized, field-aligned pod position.
