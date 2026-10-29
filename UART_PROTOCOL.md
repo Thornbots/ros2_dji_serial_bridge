@@ -348,9 +348,9 @@ changes. The bridge remains a pure translator; Jetson coordination belongs to
 | number | Origin | Meaning | Exchange (C = MCB, J = Jetson) |
 | --- | --- | --- | --- |
 | 0 | J | Main-only link check | J→C 0, C→J 0; no third leg |
-| 1 | C | Start mapping | C→J 1, J→C 1, C→J 1; J stops echoing |
+| 1 | C | Start mapping | C→J 1, J→C 1, C→J 1, J→C 1; C ignores |
 | 2 | J | Ready at captured start | J→C 2, C→J 2, J→C 2; C echoes again, J ignores |
-| 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3; J stops echoing |
+| 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3, J→C 3; C ignores |
 | 4 | J | Mapping / away from start | J→C 4, C→J 4, J→C 4; C echoes again, J ignores |
 
 Only C owns the states. Main --1--> Setup mapping --2--> Ready to save;
@@ -360,7 +360,8 @@ drive and looks forward. Ready gives green LED/1 Hz beep, forward head and
 slow drive capped at 0.4 m/s. Mapping locks the forward head and uses the same
 drive cap. Done disables drive and permits power-off, with no head-down pose.
 C replies to 0 only in Main;
-it ignores 0 elsewhere. Zero never changes state. Unknown numbers are ignored.
+it ignores 0 elsewhere. Zero is the one exception to always-ack by prior user
+decision and never changes state. Unknown numbers are ignored, never echoed.
 
 J publishes 0 once per wall second. Even transactions allow one outstanding
 number, retry every 0.5 wall seconds, and stop after ten sends (timeout at
@@ -374,16 +375,23 @@ distinguish them. It changes state only once from a legal source state;
 repeated requests remain idempotent, including recovery after an uncertain
 timeout. J ignores echoes when it is not waiting for that number, ending the exchange.
 
-There is no sequence/transaction field. J treats an odd number as fresh only
-after at least five wall seconds without receiving that same number. It echoes
-the fresh request **before** dispatching work. Every subsequent same-number
-frame inside that sliding quiet interval is consumed without an echo or work:
-this includes the final leg and duplicates. A new attempt/retry from C must
-wait at least ten seconds after its last same-number transmission (allowing
-up to five seconds of transit plus J's five-second receive quiet interval). If J's ACK
-was lost, C retries after that interval; J suppresses repeated start work for
-the lifetime of the coordinator and acknowledges a save already running with
-a loud warning. Repeated saves after the interval are new requests.
+There is no sequence/transaction field. J echoes **every** received 1/3 in any
+state, even an illegal request, duplicate, retry or C's final leg, **before**
+dispatching any work. The five-second sliding same-number receive window gates
+only work: J dispatches only after at least five wall seconds without that
+number. A distinct new same-number request within that window is ACKed but not
+executed. C retries an unacknowledged 1/3 at intervals of at least 0.5 wall
+seconds; J ACKs retries immediately. C sends its final leg only once, on a
+matching echo while awaiting it, then ignores duplicate/late echoes in every
+state. J suppresses repeated start work for the lifetime of the coordinator
+and acknowledges a save already running with a loud warning. Repeated saves
+after the quiet interval are new requests.
+
+The receiver of a number originated by its peer always echoes it (J for 1/3,
+C for 2/4), while work and state changes happen at most once. The originator
+echoes its peer's echo only once while awaiting it, then ignores further
+echoes. Thus the receiver ACKs the final leg, and the originator consumes that
+ACK without sending again; retries cannot sustain an echo loop.
 
 These rules require each frame and its resulting echo to expire within five
 seconds of the originating send, and no concurrent

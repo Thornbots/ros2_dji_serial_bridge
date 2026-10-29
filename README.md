@@ -20,11 +20,15 @@ wire change is two commits in two repos, landed together.
 ### Asked of the firmware
 
 **Pending MMM change:** implement the MCB-owned mapping states and bounded
-three-leg PING exchanges in the [PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
+PING exchanges in the [PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
 Replace unconditional echoes: 0 replies only in Main; odd requests originate
 on the MCB; even requests originate on the Jetson. MCB echoes every received
-2/4, changing state only once from a legal source state; Jetson ignores echoes
-after its final leg. Odd-message quiet/retry rules remain unchanged.
+2/4 in any state, changing state only once from a legal source state; Jetson
+ignores echoes after its final leg. Jetson ACKs every 1/3, including final legs;
+MCB sends its final leg only once while awaiting the matching echo and ignores
+later echoes to terminate the exchange. Follow the linked contract's revised
+odd retry timing and work-only quiet window; Main-only 0 remains the explicit
+exception to always-ack.
 Enforce forward/locked head, the 0.4 m/s mapping drive cap, drive/LED/beep and
 Done power-off behavior there. Done has no head-down pose. Another team binds
 the MCB start/save triggers; those bindings are outside this change.
