@@ -351,10 +351,11 @@ changes. The bridge remains a pure translator; Jetson coordination belongs to
 | 1 | C | Start mapping | C→J 1, J→C 1, C→J 1, J→C 1; C ignores |
 | 2 | J | Ready at captured start | J→C 2, C→J 2, J→C 2; C echoes again, J ignores |
 | 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3, J→C 3; C ignores |
-| 4 | J | Mapping / away from start | J→C 4, C→J 4, J→C 4; C echoes again, J ignores |
+| 4 | J | Mapping / away from start; Done→Mapping after failed Ready save | J→C 4, C→J 4, J→C 4; C echoes again, J ignores |
 
 Only C owns the states. Main --1--> Setup mapping --2--> Ready to save;
 Ready to save --4--> Mapping --2--> Ready to save. Ready to save --3--> Done;
+Done --4--> Mapping.
 Mapping --3--> Save incomplete, immediately back to Mapping. Setup disables
 drive and looks forward. Ready gives green LED/1 Hz beep, forward head and
 slow drive capped at 0.4 m/s. Mapping locks the forward head and uses the same
@@ -403,8 +404,15 @@ runs. Ack means receipt, **never successful save or durable storage**. J treats
 3 as a Ready save only when its last completed even exchange was 2 and its
 local start gate still passes; otherwise it takes an incomplete snapshot.
 After a successful validated save (SAVE OK), J invokes its configured shutdown
-command. Save failure leaves J running for recovery; snapshots never shut it
-down. C powers off its own side independently, so Done can still interrupt
+command. Only when a Ready save fails to start or exits non-zero, J sends 4
+to return C from Done to Mapping. J waits for that exchange to complete before
+resuming pose announcements, sending 2 again if its start gate passes; the
+five-second same-number even reuse cooldown still applies. Failed incomplete
+snapshots and shutdown-command failures after SAVE OK do not trigger this 4.
+Save failure leaves J running for recovery; snapshots never shut it down.
+In Main, Setup mapping and Mapping, 4 is echoed without changing state;
+Ready to save still transitions to Mapping on 4.
+C powers off its own side independently, so Done can still interrupt
 storage if that also removes Jetson power before the save finishes.
 
 ---

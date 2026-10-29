@@ -28,7 +28,10 @@ ignores echoes after its final leg. Jetson ACKs every 1/3, including final legs;
 MCB sends its final leg only once while awaiting the matching echo and ignores
 later echoes to terminate the exchange. Follow the linked contract's revised
 odd retry timing and work-only quiet window; Main-only 0 remains the explicit
-exception to always-ack.
+exception to always-ack. Accept 4 in Done to return to Mapping after Jetson's
+Ready save fails to start or exits non-zero; Jetson completes 4 before resuming
+pose-driven 2/4 announcements. Failed incomplete snapshots and failures of the
+shutdown command after a successful save do not request this recovery.
 Enforce forward/locked head, the 0.4 m/s mapping drive cap, drive/LED/beep and
 Done power-off behavior there. Done has no head-down pose. Another team binds
 the MCB start/save triggers; those bindings are outside this change.
