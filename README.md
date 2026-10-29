@@ -54,7 +54,8 @@ Paths below are under `MCB-project/src/` in MCBV3.
   `max(0, delay_ms - FIRING_LATENCY_TIME)`; the wire delay includes
   indexer latency and alignment wait ([contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision)).
   Shorter delays execute on the
-  next control cycle. The pending shot is restarted by each new aim frame.
+  next control cycle. A pending shot holds its frame; newer frames are read
+  after it is requested.
 - Bit 1 permits firmware patrol when an aim expires; bit 2 permits a 500 ms
   hit turn, including interruption of an idle aim. Clearing bit 2 cancels
   that turn. Target frames clear bit 2, including coasting/predicted or
