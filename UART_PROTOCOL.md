@@ -327,19 +327,69 @@ The node unpacks the byte into the eight named booleans.
 
 ## Either direction
 
-### PING (id=5) — link check, echoed by the MCB
+### PING (id=5) — MCB Mapping Machine and link check
 
 1-byte payload, 10-byte frame. The same ID both ways; the direction tells
 them apart. Jetson → MCB: subscribed on `~/ping_to_mcb`, header discarded.
-The MCB attempts an echo when `JetsonSubsystem::refresh` consumes a Ping
-and its transmitter is ready; [MCB receive](#mcb-receive) can lose a Ping
-before consumption, and a busy transmitter can drop the echo;
 MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
 `dji_serial_bridge/msg/Ping`, depth-10 reliable.
 
 | Off | Size | Type    | Field    | From / to     |
 |-----|------|---------|----------|---------------|
 | 0   | 1    | uint8   | `number` | `Ping.number` |
+
+The following MMM application contract is pending in MCBV3 and the sim MCB
+emulator. Current firmware echoes every consumed PING when its transmitter is
+ready; do not enable MMM against that implementation. No payload or UART ID
+changes. The bridge remains a pure translator; Jetson coordination belongs to
+[`operator_workflow mmm`](../thornbots_pkg/README.md#mcb-mapping-machine).
+[MCB receive](#mcb-receive) can lose frames before consumption.
+
+| number | Origin | Meaning | Exchange (C = MCB, J = Jetson) |
+| --- | --- | --- | --- |
+| 0 | J | Main-only link check | J→C 0, C→J 0; no third leg |
+| 1 | C | Start mapping | C→J 1, J→C 1, C→J 1; J stops echoing |
+| 2 | J | Ready at captured start | J→C 2, C→J 2, J→C 2; C stops echoing |
+| 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3; J stops echoing |
+| 4 | J | Mapping / away from start | J→C 4, C→J 4, J→C 4; C stops echoing |
+
+Only C owns the states. Main --1--> Setup mapping --2--> Ready to save;
+Ready to save --4--> Mapping --2--> Ready to save. Ready to save --3--> Done;
+Mapping --3--> Save incomplete, immediately back to Mapping. Setup disables
+drive and looks forward. Ready gives green LED/1 Hz beep, forward head and
+slow drive. Mapping locks the forward head and uses slow drive. Done lowers
+the head, disables drive and permits power-off. C replies to 0 only in Main;
+it ignores 0 elsewhere. Zero never changes state. Unknown numbers are ignored.
+
+J publishes 0 once per wall second. Even transactions allow one outstanding
+number, retry every 0.5 wall seconds, and stop after ten sends (timeout at
+5 seconds). A matching echo ends retries and emits one final leg; unsolicited,
+late-after-timeout and duplicate even echoes are ignored. Timeout logs an
+error and the coordinator retries the latest pose condition after a five-second
+quiet interval. A completed/timed-out even number cannot be reused for five
+seconds. A changed pose condition waits for the outstanding transaction to end.
+C must make repeated even requests idempotent, including recovery after an
+uncertain timeout; it must suppress the final leg and never create an echo loop.
+
+There is no sequence/transaction field. J treats an odd number as fresh only
+after at least five wall seconds without receiving that same number. It echoes
+the fresh request **before** dispatching work. Every subsequent same-number
+frame inside that sliding quiet interval is consumed without an echo or work:
+this includes the final leg and duplicates. A new attempt/retry from C must
+wait at least ten seconds after its last same-number transmission (allowing
+up to five seconds of transit plus J's five-second receive quiet interval). If J's ACK
+was lost, C retries after that interval; J suppresses repeated start work for
+the lifetime of the coordinator and acknowledges a save already running with
+a loud warning. Repeated saves after the interval are new requests.
+
+These rules require each frame and its resulting echo to expire within five
+seconds of the originating send, and no concurrent
+same-number odd request. Arbitrarily delayed final legs and fresh requests
+are indistinguishable on this wire; delivery/exactly-once execution across
+coordinator or MCB restarts is not guaranteed. On coordinator restart begin a
+new attempt from MCB Main. Disable other PING publishers/diagnostics while MMM
+runs. Ack means receipt, **never successful save or durable storage**; Done
+can permit power-off before the asynchronous Jetson save finishes.
 
 ---
 

@@ -19,6 +19,16 @@ wire change is two commits in two repos, landed together.
 
 ### Asked of the firmware
 
+**Pending MMM change:** implement the MCB-owned mapping states and bounded
+three-leg PING exchanges in the [PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
+Replace unconditional echoes: 0 replies only in Main; odd requests originate
+on the MCB; even requests originate on the Jetson; final legs terminate.
+Enforce forward/locked head, drive/LED/beep and Done power-off behavior there.
+The sim MCB emulator also needs this behavior. Neither implementation is part
+of the Jetson coordinator change. Do not deploy MMM until they agree; ACK of
+save is immediate receipt and cannot guarantee that asynchronous storage has
+finished. The bridge has no MMM state or acknowledgement logic.
+
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
 firmware and ROS together; physical acceptance is tracked in the [ROADMAP](../docs/ROADMAP.md#later-needs-a-robot).
