@@ -383,9 +383,12 @@ number. A distinct new same-number request within that window is ACKed but not
 executed. C retries an unacknowledged 1/3 at intervals of at least 0.5 wall
 seconds; J ACKs retries immediately. C sends its final leg only once, on a
 matching echo while awaiting it, then ignores duplicate/late echoes in every
-state. J suppresses repeated start work for the lifetime of the coordinator
-and acknowledges a save already running with a loud warning. Repeated saves
-after the quiet interval are new requests.
+state. A start after the quiet interval begins a new Jetson session, including after
+an MCB restart or setup failure; while a save is running J rejects it with 6.
+This new session cancels the previous even transaction and clears its completed
+state and cooldowns so the new setup can report 2/6. Odd receive windows remain
+in force. J acknowledges a save already running with a loud warning. Repeated
+saves after the quiet interval are new requests.
 
 The receiver of a number originated by its peer always echoes it (J for 1/3,
 C for 2/4/6), while work and state changes happen at most once. The originator
