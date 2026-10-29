@@ -19,29 +19,15 @@ wire change is two commits in two repos, landed together.
 
 ### Asked of the firmware
 
-**Pending MMM change:** implement the MCB-owned mapping states and bounded
-PING exchanges in the [PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
-Replace unconditional echoes: 0 replies only in Main; odd requests originate
-on the MCB; even requests originate on the Jetson. MCB echoes every received
-2/4 in any state, changing state only once from a legal source state; Jetson
-ignores echoes after its final leg. Jetson ACKs every 1/3, including final legs;
-MCB sends its final leg only once while awaiting the matching echo and ignores
-later echoes to terminate the exchange. Follow the linked contract's revised
-odd retry timing and work-only quiet window; Main-only 0 remains the explicit
-exception to always-ack. Accept 4 in Done to return to Mapping after Jetson's
-Ready save fails to start or exits non-zero; Jetson completes 4 before resuming
-pose-driven 2/4 announcements. Failed incomplete snapshots and failures of the
-shutdown command after a successful save do not request this recovery.
-Enforce forward/locked head, the 0.4 m/s mapping drive cap, drive/LED/beep and
-Done power-off behavior there. Done has no head-down pose. Another team binds
-the MCB start/save triggers; those bindings are outside this change.
-The sim MCB emulator also needs this behavior. Neither implementation is part
-of the Jetson coordinator change. Do not deploy MMM until they agree; ACK of
-save is immediate receipt and cannot guarantee that asynchronous storage has
-finished. Jetson shuts down only after a successful validated Ready save;
-failure leaves it running and incomplete snapshots never shut it down. MCB
-powers off its own side independently, which can still interrupt storage if
-it removes Jetson power. The bridge has no MMM state or acknowledgement logic.
+MMM uses the MCB-owned states and exchanges in the
+[PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
+Firmware and the sim MCB emulator must implement that contract together,
+including Setup→Done on 6 and Done→Mapping on 4 after a failed Ready save.
+The bridge only translates PING; the in-stack
+[`mmm` node](../thornbots_pkg/README.md#mcb-mapping-machine) owns Jetson work.
+ACK of save is immediate receipt and cannot guarantee durable storage. Verify
+firmware/emulator agreement before physical use; MCB power-off can interrupt a
+save if it also removes Jetson power.
 
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
