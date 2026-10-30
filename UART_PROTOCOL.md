@@ -47,6 +47,8 @@ fields they carry. IDs 0-5 match `enum UartMessage` in the firmware's
 `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped. The firmware
 sends nine POSE then one REF_SYS on one 10 ms timer.
 
+![Field frame, team starts and robot frames, top view](docs/field_frame.svg)
+
 **Field-aligned frames.** Both wire frames use REP-103 metres/radians,
 z up, (0, 0) initially at the field
 centre, x toward blue's base, y left. The MCB boots at its team's start,
