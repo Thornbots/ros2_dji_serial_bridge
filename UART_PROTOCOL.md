@@ -331,19 +331,97 @@ The node unpacks the byte into the eight named booleans.
 
 ## Either direction
 
-### PING (id=5) — link check, echoed by the MCB
+### PING (id=5) — MCB Mapping Machine and link check
 
 1-byte payload, 10-byte frame. The same ID both ways; the direction tells
 them apart. Jetson → MCB: subscribed on `~/ping_to_mcb`, header discarded.
-The MCB attempts an echo when `JetsonSubsystem::refresh` consumes a Ping
-and its transmitter is ready; [MCB receive](#mcb-receive) can lose a Ping
-before consumption, and a busy transmitter can drop the echo;
 MCB → Jetson: published on `~/ping_from_mcb`, stamped like POSE. Both
 `dji_serial_bridge/msg/Ping`, depth-10 reliable.
 
 | Off | Size | Type    | Field    | From / to     |
 |-----|------|---------|----------|---------------|
 | 0   | 1    | uint8   | `number` | `Ping.number` |
+
+The MMM application contract below uses the existing payload and UART ID.
+The bridge remains a pure translator; Jetson coordination belongs to the
+in-stack C++ [`mmm` node](../thornbots_pkg/README.md#mcb-mapping-machine).
+[MCB receive](#mcb-receive) can lose frames before consumption.
+
+| number | Origin | Meaning | Exchange (C = MCB, J = Jetson) |
+| --- | --- | --- | --- |
+| 0 | J | Main-only link check | J→C 0, C→J 0; no third leg |
+| 1 | C | Start mapping | C→J 1, J→C 1, C→J 1, J→C 1; C ignores |
+| 2 | J | Ready at captured start | J→C 2, C→J 2, J→C 2; C echoes again, J ignores |
+| 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3, J→C 3; C ignores |
+| 4 | J | Mapping / away from start; Done→Mapping after failed Ready save | J→C 4, C→J 4, J→C 4; C echoes again, J ignores |
+| 6 | J | Setup failed | J→C 6, C→J 6, J→C 6; C echoes again, J ignores |
+
+Only C owns the states. Main --1--> Setup mapping --2--> Ready to save;
+Ready to save --4--> Mapping --2--> Ready to save. Ready to save --3--> Done;
+Done --4--> Mapping. Setup mapping --6--> Done.
+Mapping --3--> Save incomplete, immediately back to Mapping. Setup disables
+drive and looks forward. Ready gives green LED/1 Hz beep, forward head and
+slow drive capped at 0.4 m/s. Mapping locks the forward head and uses the same
+drive cap. Done disables drive and permits power-off, with no head-down pose.
+C replies to 0 only in Main;
+it ignores 0 elsewhere. Zero is the one exception to always-ack by prior user
+decision and never changes state. Unknown numbers are ignored, never echoed.
+
+J publishes 0 once per wall second. Even transactions allow one outstanding
+number, retry every 0.5 wall seconds, and stop after ten sends (timeout at
+5 seconds). A matching echo ends retries and emits one final leg; unsolicited,
+late-after-timeout and duplicate even echoes are ignored. Timeout logs an
+error and the coordinator retries the latest pose condition after a five-second
+quiet interval. A completed/timed-out even number cannot be reused for five
+seconds. A changed pose condition waits for the outstanding transaction to end.
+C echoes every received 2/4/6, including retries and final legs: it cannot
+distinguish them. It changes state only once from a legal source state;
+repeated requests remain idempotent, including recovery after an uncertain
+timeout. J ignores echoes when it is not waiting for that number, ending the exchange.
+
+There is no sequence/transaction field. J echoes **every** received 1/3 in any
+state, even an illegal request, duplicate, retry or C's final leg, **before**
+dispatching any work. The five-second sliding same-number receive window gates
+only work: J dispatches only after at least five wall seconds without that
+number. A distinct new same-number request within that window is ACKed but not
+executed. C retries an unacknowledged 1/3 at intervals of at least 0.5 wall
+seconds; J ACKs retries immediately. C sends its final leg only once, on a
+matching echo while awaiting it, then ignores duplicate/late echoes in every
+state. A start after the quiet interval begins a new Jetson session, including after
+an MCB restart or setup failure; while a save is running J rejects it with 6.
+This new session cancels the previous even transaction and clears its completed
+state and cooldowns so the new setup can report 2/6. Odd receive windows remain
+in force. J acknowledges a save already running with a loud warning. Repeated
+saves after the quiet interval are new requests.
+
+The receiver of a number originated by its peer always echoes it (J for 1/3,
+C for 2/4/6), while work and state changes happen at most once. The originator
+echoes its peer's echo only once while awaiting it, then ignores further
+echoes. Thus the receiver ACKs the final leg, and the originator consumes that
+ACK without sending again; retries cannot sustain an echo loop.
+
+These rules require each frame and its resulting echo to expire within five
+seconds of the originating send, and no concurrent
+same-number odd request. Arbitrarily delayed final legs and fresh requests
+are indistinguishable on this wire; delivery/exactly-once execution across
+coordinator or MCB restarts is not guaranteed. On coordinator restart begin a
+new attempt from MCB Main. Disable other PING publishers/diagnostics while MMM
+runs. Ack means receipt, **never successful save or durable storage**. J treats
+3 as a Ready save only when its last completed even exchange was 2 and its
+local start gate still passes; otherwise it takes an incomplete snapshot.
+After a successful validated save, J may request its opt-in host shutdown
+mechanism. Only when a Ready save fails to start or complete, J sends 4
+to return C from Done to Mapping. J waits for that exchange to complete before
+resuming pose announcements, sending 2 again if its start gate passes; the
+five-second same-number even reuse cooldown still applies. Failed incomplete
+snapshots and shutdown-request failures after a successful save do not trigger this 4.
+Save failure leaves J running for recovery; snapshots never shut it down.
+In Main, Setup mapping and Mapping, 4 is echoed without changing state;
+Ready to save still transitions to Mapping on 4. Setup transitions to Done on 6;
+every other state echoes 6 without a state change. J sends 6 on setup timeout,
+reset/input failure, or a running localization mode other than mapping.
+C powers off its own side independently, so Done can still interrupt
+storage if that also removes Jetson power before the save finishes.
 
 ---
 

@@ -19,6 +19,16 @@ wire change is two commits in two repos, landed together.
 
 ### Asked of the firmware
 
+MMM uses the MCB-owned states and exchanges in the
+[PING contract](UART_PROTOCOL.md#ping-id5--mcb-mapping-machine-and-link-check).
+Firmware and the sim MCB emulator must implement that contract together,
+including Setup→Done on 6 and Done→Mapping on 4 after a failed Ready save.
+The bridge only translates PING; the in-stack
+[`mmm` node](../thornbots_pkg/README.md#mcb-mapping-machine) owns Jetson work.
+ACK of save is immediate receipt and cannot guarantee durable storage. Verify
+firmware/emulator agreement before physical use; MCB power-off can interrupt a
+save if it also removes Jetson power.
+
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
 firmware and ROS together; physical acceptance is tracked in the [ROADMAP](../docs/ROADMAP.md#later-needs-a-robot).
@@ -73,7 +83,7 @@ Paths below are under `MCB-project/src/` in MCBV3.
   stale-Pico `ODOM_I2C_DEAD` ([codes](UART_PROTOCOL.md#message-types)).
 - REF_SYS hit angles use radians relative to the current chassis heading,
   positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
-  `util/hitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
+  `util/HitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
   tests cover nonzero head and chassis yaw. It retains the latest world hit
   bearing until a complete REF_SYS write succeeds, independently of the
   one-cycle event used by auto-aim/UI. A report uses the current chassis
