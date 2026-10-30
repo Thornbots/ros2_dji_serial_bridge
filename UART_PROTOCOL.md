@@ -52,13 +52,15 @@ sends nine POSE then one REF_SYS on one 10 ms timer.
 **Field-aligned frames.** Both wire frames use REP-103 metres/radians,
 z up, (0, 0) initially at the field
 centre, x toward blue's base, y left. The MCB boots at its team's start,
-red (-4.625, 0) facing +x, blue (4.625, 0) facing -x, and adds it to its
-odometry and IMU yaw (`OdometrySubsystemConstants.hpp`; not measured on
-the field). POSE and CV_TARGET use continuous raw pod odometry (`odom` on
-the Jetson), which RELOCALIZE never moves. Boot/team selection can reanchor
+red (-4.625, 0), blue (4.625, 0), both facing +y (chassis heading π/2).
+`root` stays heading-fixed at yaw 0 for both teams; both `chassis_yaw` joints
+should be π/2. This is the physical boot contract, not proof of firmware
+configuration or telemetry: current POSE omits chassis yaw and the bridge
+publishes its zero placeholder (see [proposed chassis yaw](#proposed-pose-chassis-yaw)).
+POSE and CV_TARGET use continuous raw pod odometry (`odom` on the Jetson), which RELOCALIZE never moves. Boot/team selection can reanchor
 the provisional start: red-to-blue selection changes the start by 9.25 m
-and changes the startup heading. This initialization exception is not a
-navigation correction; discard pose interpolation across that discontinuity.
+without changing the required π/2 chassis boot heading. This initialization
+exception is not a navigation correction; discard pose interpolation across that discontinuity.
 NAV_GOAL and RELOCALIZE use the
 corrected navigation frame (`nav_odom` on the Jetson). RELOCALIZE changes
 only the MCB's navigation offset; it cannot move POSE or an existing aim

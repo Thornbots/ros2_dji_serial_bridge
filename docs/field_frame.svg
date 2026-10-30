@@ -31,17 +31,17 @@
 
   <!-- Red start -->
   <rect x="150" y="165" width="40" height="40" rx="5" fill="#e66" stroke="#a11" stroke-width="2"/>
-  <line x1="170" y1="185" x2="240" y2="185" stroke="#a11" stroke-width="3" marker-end="url(#a)"/>
+  <line x1="170" y1="185" x2="170" y2="110" stroke="#a11" stroke-width="3" marker-end="url(#a)"/>
   <text x="125" y="240" fill="#a11" font-weight="bold">red start (-4.625, 0)</text>
-  <text x="125" y="258" fill="#a11" font-size="12">faces +x: chassis heading 0</text>
+  <text x="125" y="258" fill="#a11" font-size="12">faces +y: chassis heading π/2</text>
 
   <!-- Blue start -->
   <rect x="770" y="165" width="40" height="40" rx="5" fill="#69e" stroke="#14a" stroke-width="2"/>
-  <line x1="790" y1="185" x2="720" y2="185" stroke="#14a" stroke-width="3" marker-end="url(#a)"/>
+  <line x1="790" y1="185" x2="790" y2="110" stroke="#14a" stroke-width="3" marker-end="url(#a)"/>
   <text x="835" y="240" fill="#14a" font-weight="bold" text-anchor="end">blue start (4.625, 0)</text>
-  <text x="835" y="258" fill="#14a" font-size="12" text-anchor="end">faces -x: chassis heading π</text>
+  <text x="835" y="258" fill="#14a" font-size="12" text-anchor="end">faces +y: chassis heading π/2</text>
 
-  <text x="480" y="300" text-anchor="middle" font-size="12" fill="#333">root yaw is 0 for both teams; only the chassis_yaw joint differs (red 0, blue π)</text>
+  <text x="480" y="300" text-anchor="middle" font-size="12" fill="#333">root yaw is 0 for both teams; both chassis_yaw joints are π/2 at boot</text>
 
   <!-- Robot inset -->
   <text x="40" y="360" font-size="17" font-weight="bold">Robot frames (same top view)</text>
