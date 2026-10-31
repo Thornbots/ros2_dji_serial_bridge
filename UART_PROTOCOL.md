@@ -267,6 +267,8 @@ its first successful Pico read and once the last successful read is 500 ms
 old, otherwise `ODOM_PODS` (0). Pico values refresh about every 260 ms. A read
 that succeeds with frozen values still reports 0, so frozen pods are not
 flagged on the wire.
+Hero and standard have no odometry: they always send `x/y/vel` 0 with code 2,
+and `head_yaw` without a start yaw.
 
 `x/y`, velocity and `head_yaw` are in the raw field-aligned aim frame (above).
 RELOCALIZE never changes them. Taproot IMU yaw is non-negative, but the
