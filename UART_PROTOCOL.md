@@ -53,7 +53,8 @@ sends nine POSE then one REF_SYS on one 10 ms timer.
 z up, x toward blue's base, y left. Raw POSE/CV_TARGET coordinates boot at
 (0, 0) for both teams and remain relative to that physical start. Navigation
 coordinates become field-centred after the Jetson's startup RELOCALIZE:
-red (-4.625, 0), blue (4.625, 0), both facing +y (chassis heading π/2).
+red (-3.53, -0.426), blue (3.53, -0.426), both facing +y (chassis heading π/2).
+These are temporary spooky scrim values (unmeasured); the ARCC start was (±4.625, 0).
 `root` stays heading-fixed at yaw 0 for both teams; both `chassis_yaw` joints
 should be π/2. This is the physical boot contract, not proof of firmware
 configuration or telemetry: current POSE omits chassis yaw and the bridge
