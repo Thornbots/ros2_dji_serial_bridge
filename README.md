@@ -108,7 +108,7 @@ navigation offset and does not reanchor raw aim. The exact frame roles are
 owned by
 [UART_PROTOCOL](UART_PROTOCOL.md#message-types). Deploy the matching
 firmware and ROS stack together; the unchanged payload length cannot detect
-an axis mismatch. The team's start pose, including red (-4.625, 0), remains
+an axis mismatch. The physical team's start pose remains
 unmeasured on the field.
 
 Jetson camera/target/aim transforms use raw MCB POSE, independently of the
