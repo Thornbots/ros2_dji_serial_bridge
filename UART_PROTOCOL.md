@@ -421,7 +421,9 @@ Save failure leaves J running for recovery; snapshots never shut it down.
 In Main, Setup mapping and Mapping, 4 is echoed without changing state;
 Ready to save still transitions to Mapping on 4. Setup transitions to Done on 6;
 every other state echoes 6 without a state change. J sends 6 on setup timeout,
-reset/input failure, or a running localization mode other than mapping.
+reset/input failure, or failure to switch a non-mapping localization backend
+to mapping. J keeps the bridge and MMM coordinator running through this switch;
+switching and subsequent reset/boot capture each have a separate setup wall budget.
 C powers off its own side independently, so Done can still interrupt
 storage if that also removes Jetson power before the save finishes.
 
