@@ -8,7 +8,7 @@
   <rect width="960" height="580" fill="#ffffff"/>
 
   <!-- Field (schematic) -->
-  <text x="40" y="30" font-size="17" font-weight="bold">Field frame (top view, not to scale): registered map, nav_odom, odom, root</text>
+  <text x="40" y="30" font-size="17" font-weight="bold">Field frame (top view, not to scale): registered map, initialized nav_odom</text>
   <rect x="40" y="50" width="880" height="270" fill="#f6f6f6" stroke="#444" stroke-width="2"/>
   <rect x="40" y="50" width="70" height="270" fill="#f3d2d2" stroke="none"/>
   <rect x="850" y="50" width="70" height="270" fill="#d2dcf3" stroke="none"/>
@@ -34,12 +34,14 @@
   <line x1="170" y1="185" x2="170" y2="110" stroke="#a11" stroke-width="3" marker-end="url(#a)"/>
   <text x="125" y="240" fill="#a11" font-weight="bold">red start (-4.625, 0)</text>
   <text x="125" y="258" fill="#a11" font-size="12">faces +y: chassis heading π/2</text>
+  <text x="125" y="276" fill="#a11" font-size="12">raw odom origin (0, 0)</text>
 
   <!-- Blue start -->
   <rect x="770" y="165" width="40" height="40" rx="5" fill="#69e" stroke="#14a" stroke-width="2"/>
   <line x1="790" y1="185" x2="790" y2="110" stroke="#14a" stroke-width="3" marker-end="url(#a)"/>
   <text x="835" y="240" fill="#14a" font-weight="bold" text-anchor="end">blue start (4.625, 0)</text>
   <text x="835" y="258" fill="#14a" font-size="12" text-anchor="end">faces +y: chassis heading π/2</text>
+  <text x="835" y="276" fill="#14a" font-size="12" text-anchor="end">raw odom origin (0, 0)</text>
 
   <text x="480" y="300" text-anchor="middle" font-size="12" fill="#333">root yaw is 0 for both teams; both chassis_yaw joints are π/2 at boot</text>
 

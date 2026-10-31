@@ -50,23 +50,26 @@ sends nine POSE then one REF_SYS on one 10 ms timer.
 ![Field frame, team starts and robot frames, top view](docs/field_frame.svg)
 
 **Field-aligned frames.** Both wire frames use REP-103 metres/radians,
-z up, (0, 0) initially at the field
-centre, x toward blue's base, y left. The MCB boots at its team's start,
+z up, x toward blue's base, y left. Raw POSE/CV_TARGET coordinates boot at
+(0, 0) for both teams and remain relative to that physical start. Navigation
+coordinates become field-centred after the Jetson's startup RELOCALIZE:
 red (-4.625, 0), blue (4.625, 0), both facing +y (chassis heading π/2).
 `root` stays heading-fixed at yaw 0 for both teams; both `chassis_yaw` joints
 should be π/2. This is the physical boot contract, not proof of firmware
 configuration or telemetry: current POSE omits chassis yaw and the bridge
 publishes its zero placeholder (see [proposed chassis yaw](#proposed-pose-chassis-yaw)).
-POSE and CV_TARGET use continuous raw pod odometry (`odom` on the Jetson), which RELOCALIZE never moves. Boot/team selection can reanchor
-the provisional start: red-to-blue selection changes the start by 9.25 m
-without changing the required π/2 chassis boot heading. This initialization
-exception is not a navigation correction; discard pose interpolation across that discontinuity.
+POSE and CV_TARGET use continuous raw pod odometry (`odom` on the Jetson),
+which RELOCALIZE and team selection never move.
 NAV_GOAL and RELOCALIZE use the
 corrected navigation frame (`nav_odom` on the Jetson). RELOCALIZE changes
 only the MCB's navigation offset; it cannot move POSE or an existing aim
 point. Navigation offsets are translation-only; these frames keep the same
-axes, coincide at initialization and may subsequently diverge in position.
-The field-centred raw origin is an application choice; raw odometry can drift,
+axes. MCB navigation is initially start-relative; autonomous routes and
+NAV_GOAL driving wait for the first RELOCALIZE. The Jetson waits for the
+referee team, seeds navigation at raw position plus that team's start, and
+sends the absolute navigation position. AMCL also waits for that team before
+starting with its team-start prior; it never uses global localization.
+Raw odometry can drift,
 as [REP 105](https://github.com/ros-infrastructure/rep/blob/master/rep-0105.rst)
 permits. Neither raw odometry nor an aim point is a global localization fix.
 
@@ -101,7 +104,7 @@ header are discarded.
 | 4   | 4    | float32 | `y`       | `point.y` |
 
 A goal in the corrected navigation frame, metres, consumed by its autonomous
-drive controller. No publisher in this workspace: `mcb_relay` wires up
+drive controller only after its first RELOCALIZE. No publisher in this workspace: `mcb_relay` wires up
 `~/cv_target` and `~/relocalize` only.
 
 ### CV_TARGET (id=1) — aim point and fire decision
@@ -224,6 +227,12 @@ header are discarded.
 The localization-estimated position in corrected navigation `nav_odom`, metres.
 The MCB sets its navigation offset against its current raw pod position.
 Navigation controllers see this correction; raw POSE and gimbal aim do not.
+The first accepted fix enables autonomous navigation. To tolerate a lost frame
+in the single receive slot, `mcb_relay` repeats each correction three times
+after its first send, at least 0.3 s apart, using fresh localization/raw inputs
+and the same confidence gate. These are newly predicted absolute positions,
+not cumulative deltas. The bounded repeats do not prove receipt if all four
+frames are lost; there is no acknowledgement in this payload.
 The node logs every transmission beside the latest raw `~/pose`; those
 coordinates are in different frames after a correction.
 
@@ -270,7 +279,8 @@ flagged on the wire.
 Hero and standard have no odometry: they always send `x/y/vel` 0 with code 2,
 and `head_yaw` without a start yaw.
 
-`x/y`, velocity and `head_yaw` are in the raw field-aligned aim frame (above).
+`x/y` start at zero for both teams; velocity and `head_yaw` share the raw
+field-aligned aim axes (above).
 RELOCALIZE never changes them. Taproot IMU yaw is non-negative, but the
 gimbal yaw estimator extrapolates it without wrapping. POSE applies
 `std::fmod(estimated_yaw + start_yaw, 2*pi)`, which preserves sign, so
