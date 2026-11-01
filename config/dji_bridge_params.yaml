@@ -28,7 +28,7 @@
 
     # How often (seconds) to print the diagnostic stats summary (bytes
     # received, valid frames, CRC errors, pub/sub counts) to the console.
-    # Set to 0 to disable.
+    # Set to 0 to disable; negative values are rejected.
     # see README.md for the diagnostic decision table
     diag_interval_s: 5
     debug_log: true

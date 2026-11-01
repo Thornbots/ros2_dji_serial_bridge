@@ -14,4 +14,7 @@ before changing payloads. Launch through `thornbots_pkg`'s `auto.launch.py`.
 
 ## Open
 
-Frame agreement and RELOCALIZE coordination: [shared aim frame](README.md#shared-aim-frame).
+Frame agreement and RELOCALIZE coordination: [aim and navigation frames](README.md#aim-and-navigation-frames).
+Motor-plant calibration and limits remain at the simulator's
+[MCB emulator](../sim/README.md#mcb-emulator) and
+[current verification](../sim/docs/mcb-auto-drive-2026-10-12.md).

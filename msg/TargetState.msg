@@ -5,6 +5,7 @@
 # sin(yaw + k*pi/2), 0) + (0, 0, z_offset[k % 2]). Pair [0] is the tracked
 # panel's (k = 0, 2), pair [1] the other (k = 1, 3).
 std_msgs/Header header            # stamp = the time this state describes (its publish time); frame_id = odom
+builtin_interfaces/Time detection_stamp  # newest contributing detection's capture time, after camera latency correction
 
 uint32 robot_track_id             # changes on robot switch, never plate handoff
 float32 confidence                # detector confidence of the tracked panel, 0-1

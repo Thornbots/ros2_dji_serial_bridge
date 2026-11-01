@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -38,6 +39,7 @@
 #include <vector>
 
 #include <rclcpp/rclcpp.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
@@ -47,6 +49,7 @@
 
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
+#include "dji_serial_bridge/cv_target_freshness.hpp"
 
 #ifdef __APPLE__
 // macOS's termios.h stops at B230400, and its speed_t is the rate itself.
@@ -116,6 +119,9 @@ public:
     enforce_crc_ = get_parameter("enforce_crc").as_bool();
     debug_log_ = get_parameter("debug_log").as_bool();
     const auto diag_s = get_parameter("diag_interval_s").as_int();
+    if (diag_s < 0) {
+      throw std::invalid_argument("diag_interval_s must be nonnegative (0 disables)");
+    }
 
     // ── Pre-open device diagnostics ───────────────────────────────────────
     struct stat sb{};
@@ -160,9 +166,8 @@ public:
     RCLCPP_INFO(get_logger(),
                     "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
                     baudrate);
-    // Clear NONBLOCK so subsequent reads behave normally (poll() handles blocking)
-    int fl = fcntl(serial_fd_, F_GETFL);
-    fcntl(serial_fd_, F_SETFL, fl & ~O_NONBLOCK);
+    // Keep O_NONBLOCK: a validated decision must never wait in a blocking write.
+    // poll() handles receive readiness; see UART_PROTOCOL.md#cv-decision-freshness.
 
     // ── Publishers  (MCB → Jetson) ────────────────────────────────────────
     pose_pub_ = create_publisher<dji_serial_bridge::msg::RobotPose>(
@@ -199,9 +204,18 @@ public:
     // ── Diagnostic timer ──────────────────────────────────────────────────
     // Fires every diag_interval_s seconds and prints a stats summary so you
     // can see at a glance whether bytes / frames are actually flowing.
-    diag_timer_ = create_wall_timer(
-            std::chrono::seconds(diag_s),
-            std::bind(&DjiSerialBridge::print_diagnostics, this));
+    if (diag_s > 0) {
+      diag_timer_ = create_wall_timer(
+        std::chrono::seconds(diag_s),
+        std::bind(&DjiSerialBridge::print_diagnostics, this));
+      RCLCPP_INFO(get_logger(), "Diagnostic summary every %ld s", diag_s);
+    } else {
+      RCLCPP_INFO(get_logger(), "Diagnostic summary disabled");
+    }
+
+    updater_ = std::make_unique<diagnostic_updater::Updater>(this);
+    updater_->setHardwareID(device);
+    updater_->add("Serial link", this, &DjiSerialBridge::diagnose);
 
     // ── Read thread ───────────────────────────────────────────────────────
     running_.store(true);
@@ -211,11 +225,10 @@ public:
                     "═══════════════════════════════════════════════════════════\n"
                     "  MCB serial bridge READY\n"
                     "  device=%s  baud=%ld  enforce_crc=%s  poll_ms=%d\n"
-                    "  Diagnostic summary every %ld s\n"
                     "═══════════════════════════════════════════════════════════",
                     device.c_str(), baudrate,
                     enforce_crc_ ? "true" : "false",
-                    poll_ms, diag_s);
+                    poll_ms);
   }
 
   ~DjiSerialBridge() override
@@ -247,9 +260,9 @@ private:
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
   std::atomic<uint64_t> ping_msgs_pub_{0};
   std::atomic<uint64_t> ping_msgs_tx_{0};
-  // Last chassis pose received from the MCB (via POSE / ~/pose). Cached so
-  // relocalize_callback can log the coordinate being overwritten. Written on
-  // the serial read thread, read on the executor thread — hence atomic.
+  // Last raw-aim POSE x/y, cached so relocalize_callback can log it beside
+  // the navigation fix (different frames once a navigation offset exists).
+  // Written on the serial read thread, read on the executor thread: atomic.
   std::atomic<float> last_pose_x_{0.0f};
   std::atomic<float> last_pose_y_{0.0f};
   std::atomic<bool> have_pose_{false};
@@ -260,6 +273,42 @@ private:
   std::atomic<uint64_t> silent_polls_{0};
   // Wire time of one byte at the configured baud; see frame_stamp().
   int64_t byte_wire_ns_{0};
+
+  rclcpp::Clock log_clock_{RCL_STEADY_TIME};
+  std::unique_ptr<diagnostic_updater::Updater> updater_;
+  uint64_t previous_bytes_{0}, previous_frames_{0}, previous_crc_{0};
+
+  void diagnose(diagnostic_updater::DiagnosticStatusWrapper & status)
+  {
+    using Status = diagnostic_msgs::msg::DiagnosticStatus;
+    const auto bytes = bytes_rx_.load();
+    const auto frames = frames_rx_.load();
+    const auto crc = crc8_errors_.load() + crc16_errors_.load();
+    if (bytes == previous_bytes_) {
+      status.summary(Status::ERROR, "No bytes received in interval");
+    } else if (frames == previous_frames_) {
+      status.summary(Status::ERROR, "Bytes received but no valid frames in interval");
+    } else if (crc > previous_crc_) {
+      status.summary(Status::WARN, "CRC failures increased in interval");
+    } else {
+      status.summary(Status::OK, "Serial frames arriving");
+    }
+    status.add("bytes_rx", bytes);
+    status.add("frames_rx", frames);
+    status.add("crc8_errors", crc8_errors_.load());
+    status.add("crc16_errors", crc16_errors_.load());
+    status.add("pose_msgs_pub", pose_msgs_pub_.load());
+    status.add("ref_sys_msgs_pub", ref_sys_msgs_pub_.load());
+    status.add("ping_msgs_pub", ping_msgs_pub_.load());
+    status.add("nav_goal_msgs_tx", nav_goal_msgs_tx_.load());
+    status.add("cv_target_msgs_tx", cv_target_msgs_tx_.load());
+    status.add("relocalize_msgs_tx", relocalize_msgs_tx_.load());
+    status.add("ping_msgs_tx", ping_msgs_tx_.load());
+    status.add("silent_polls", silent_polls_.load());
+    previous_bytes_ = bytes;
+    previous_frames_ = frames;
+    previous_crc_ = crc;
+  }
 
   void print_diagnostics()
   {
@@ -357,8 +406,10 @@ private:
   bool send_frame(
     McbMsgType msg_type,
     const uint8_t *payload,
-    uint16_t payload_len)
+    uint16_t payload_len,
+    const builtin_interfaces::msg::Time * decision_stamp = nullptr)
   {
+    std::lock_guard<std::mutex> lock(write_mutex_);
     FrameHeader hdr{};
     hdr.head = FRAME_HEAD;
     hdr.dataLength = payload_len;
@@ -378,7 +429,18 @@ private:
     frame.push_back(static_cast<uint8_t>(crc16 & 0xFF));
     frame.push_back(static_cast<uint8_t>((crc16 >> 8) & 0xFF));
 
-    std::lock_guard<std::mutex> lock(write_mutex_);
+    if (msg_type == McbMsgType::CV_TARGET) {
+      int pending = 0;
+      // No software TX backlog may sit ahead of this unstamped wire decision.
+      if (::ioctl(serial_fd_, TIOCOUTQ, &pending) != 0 || pending != 0 ||
+        decision_stamp == nullptr || !dji_bridge::cv_target_is_fresh(
+          decision_stamp->sec, decision_stamp->nanosec, now().nanoseconds()))
+      {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+          "Dropping expired/invalid CV_TARGET or busy/unavailable serial TX queue");
+        return false;
+      }
+    }
     ssize_t written = ::write(serial_fd_, frame.data(), frame.size());
     if (written != static_cast<ssize_t>(frame.size())) {
       RCLCPP_ERROR(get_logger(),
@@ -506,7 +568,7 @@ private:
       uint8_t expected_crc8 = calculateCRC8(buf.data(), CRC8_COVERAGE);
       if (expected_crc8 != hdr.crc8 && enforce_crc_) {
         crc8_errors_.fetch_add(1, std::memory_order_relaxed);
-        RCLCPP_WARN(get_logger(),
+        RCLCPP_WARN_THROTTLE(get_logger(), log_clock_, 5000,
                             "CRC8 mismatch (seq=%u, got=0x%02x expected=0x%02x) — dropping byte",
                             hdr.seq, hdr.crc8, expected_crc8);
         drop(1);
@@ -530,7 +592,7 @@ private:
 
       if (recv_crc16 != calc_crc16 && enforce_crc_) {
         crc16_errors_.fetch_add(1, std::memory_order_relaxed);
-        RCLCPP_WARN(get_logger(),
+        RCLCPP_WARN_THROTTLE(get_logger(), log_clock_, 5000,
                             "CRC16 mismatch (seq=%u, msgType=%u, dataLen=%u, "
                             "got=0x%04x expected=0x%04x) — dropping byte",
                             hdr.seq, hdr.msgType, hdr.dataLength, recv_crc16, calc_crc16);
@@ -544,8 +606,16 @@ private:
                          "process_rx_buffer: valid frame  seq=%u  msgType=%u  dataLen=%u",
                          hdr.seq, hdr.msgType, hdr.dataLength);
       frames_rx_.fetch_add(1, std::memory_order_relaxed);
-      dispatch_incoming(hdr.msgType, payload, hdr.dataLength,
-                        frame_stamp(read_ns[total_len - 1], total_len));
+      // Bytes read before the clock is valid (sim time 0) have no capture time.
+      const int64_t start_ns = read_ns[total_len - 1] -
+        static_cast<int64_t>(total_len) * byte_wire_ns_;
+      if (start_ns < 0) {
+        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
+                             "Dropping frame msgType=%u: send start %.6f s precedes clock zero",
+                             hdr.msgType, static_cast<double>(start_ns) * 1e-9);
+      } else {
+        dispatch_incoming(hdr.msgType, payload, hdr.dataLength, frame_stamp(start_ns));
+      }
 
       // ── 6. Consume the frame ────────────────────────────────────────
       drop(total_len);
@@ -555,11 +625,9 @@ private:
   // When the MCB started sending a frame: the read time of its last byte,
   // less the whole frame's wire time. USB-serial latency is not taken off
   // (unmeasured; thornbots_pkg/AGENTS.md).
-  rclcpp::Time frame_stamp(int64_t last_byte_read_ns, size_t frame_len) const
+  rclcpp::Time frame_stamp(int64_t send_start_ns) const
   {
-    return rclcpp::Time(
-      last_byte_read_ns - static_cast<int64_t>(frame_len) * byte_wire_ns_,
-      get_clock()->get_clock_type());
+    return rclcpp::Time(send_start_ns, get_clock()->get_clock_type());
   }
 
   void dispatch_incoming(
@@ -610,14 +678,14 @@ private:
     PosePayload raw{};
     std::memcpy(&raw, payload, sizeof(raw));
 
-    // Cache the MCB's latest reported position so a subsequent relocalize
-    // can log the coordinate it is about to overwrite.
+    // Cache raw POSE coordinates for diagnostics; RELOCALIZE does not overwrite them.
     last_pose_x_.store(raw.x, std::memory_order_relaxed);
     last_pose_y_.store(raw.y, std::memory_order_relaxed);
     have_pose_.store(true, std::memory_order_relaxed);
 
     auto msg = dji_serial_bridge::msg::RobotPose{};
     msg.header.stamp = stamp;
+    msg.header.frame_id = "odom";
     msg.x = raw.x;
     msg.y = raw.y;
     msg.vel_x = raw.vel_x;
@@ -696,11 +764,11 @@ private:
     const uint64_t count =
       ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
 
-    // Log every ref_sys message received. debug_log_ is cached from the
+    // Sample ref_sys logs every five seconds. debug_log_ is cached from the
     // parameter at construction -- this runs on the serial read thread at
     // 10 Hz, so don't do a parameter lookup per frame.
     if (debug_log_) {
-      RCLCPP_INFO(get_logger(),
+      RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000,
                         "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
                         "blue=%u healing=%u reload=%u center=%u "
                         "team_center=%u opp_center=%u "
@@ -728,7 +796,8 @@ private:
     msg.number = payload[0];
     ping_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
     if (debug_log_) {
-      RCLCPP_INFO(get_logger(), "[ping RX] 0x%02x (%u)", msg.number, msg.number);
+      RCLCPP_INFO(get_logger(), "[ping RX] 0x%02x (%u)", msg.number,
+        msg.number);
     }
     ping_pub_->publish(msg);
   }
@@ -762,10 +831,11 @@ private:
     p.z = msg->z;
     p.delay_ms = msg->delay_ms;
     p.flags = (msg->fire ? 0x01 : 0x00) | (msg->type_c_based_patrol ? 0x02 : 0x00) |
-      (msg->turn_to_hit ? 0x04 : 0x00);
+      (msg->turn_to_hit ? 0x04 : 0x00) | (msg->patrol ? 0x08 : 0x00);
 
     const bool ok = send_frame(McbMsgType::CV_TARGET,
-                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p),
+      &msg->header.stamp);
     if (ok) {
       cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -784,20 +854,19 @@ private:
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
     if (ok) {
       const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
-      // Log every relocalize message sent: the pose the MCB last reported
-      // (the coordinate being overwritten) next to the new relocalized one.
+      // Raw aim pose and corrected navigation position are different frames.
       if (have_pose_.load(std::memory_order_relaxed)) {
         RCLCPP_INFO(get_logger(),
-                            "[relocalize TX #%lu] previous MCB pose (last received): "
-                            "x=%.3f y=%.3f  ->  new relocalized: x=%.3f y=%.3f",
+                            "[relocalize TX #%lu] raw aim pose (last received): "
+                            "x=%.3f y=%.3f  ->  navigation fix: x=%.3f y=%.3f",
                             count,
                             last_pose_x_.load(std::memory_order_relaxed),
                             last_pose_y_.load(std::memory_order_relaxed),
                             msg->point.x, msg->point.y);
       } else {
         RCLCPP_INFO(get_logger(),
-                            "[relocalize TX #%lu] previous MCB pose: N/A "
-                            "(no ~/pose received yet)  ->  new relocalized: x=%.3f y=%.3f",
+                            "[relocalize TX #%lu] raw aim pose: N/A "
+                            "(no ~/pose received yet)  ->  navigation fix: x=%.3f y=%.3f",
                             count, msg->point.x, msg->point.y);
       }
     } else {
@@ -817,7 +886,8 @@ private:
     if (ok) {
       ping_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
       if (debug_log_) {
-        RCLCPP_INFO(get_logger(), "[ping TX] 0x%02x (%u)", p.number, p.number);
+        RCLCPP_INFO(get_logger(), "[ping TX] 0x%02x (%u)", p.number,
+          p.number);
       }
     } else {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
@@ -854,7 +924,13 @@ private:
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DjiSerialBridge>(rclcpp::NodeOptions{}));
+  try {
+    rclcpp::spin(std::make_shared<DjiSerialBridge>(rclcpp::NodeOptions{}));
+  } catch (const std::exception & ex) {
+    RCLCPP_FATAL(rclcpp::get_logger("dji_serial_bridge"), "Bridge failed: %s", ex.what());
+    rclcpp::shutdown();
+    return 1;
+  }
   rclcpp::shutdown();
   return 0;
 }
