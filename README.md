@@ -160,10 +160,11 @@ line is silently ignored.
 ## Diagnostics
 
 The text DIAG summary retains lifetime byte, frame, CRC and per-topic counters
-every `diag_interval_s` (0 disables text only). REF_SYS, ping, RELOCALIZE and
-CRC warning samples log immediately on the first occurrence, then at most once
+every `diag_interval_s` (0 disables text only). REF_SYS and CRC warning samples
+log immediately on the first occurrence, then at most once
 per five seconds per call site, using a steady clock. Counters include suppressed
-samples; `debug_log=false` disables REF_SYS and ping sample logs. Pose logs
+samples. RELOCALIZE and PING log every event; `debug_log=false` disables
+REF_SYS and PING logs. Pose logs
 its first message and odometry-source transitions immediately.
 
 `diagnostic_updater` publishes `diagnostic_msgs/DiagnosticArray` on

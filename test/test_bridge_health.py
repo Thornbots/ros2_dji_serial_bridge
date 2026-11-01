@@ -73,9 +73,12 @@ with tempfile.TemporaryFile(mode='w+') as output:
 
     def send_for(data, seconds=0.8):
         deadline = time.monotonic() + seconds
+        sent = 0
         while time.monotonic() < deadline:
             os.write(master, data)
+            sent += 1
             rclpy.spin_once(node, timeout_sec=0.01)
+        return sent
 
     try:
         spin_until(lambda: any(level == 2 and 'No bytes' in text
@@ -95,7 +98,7 @@ with tempfile.TemporaryFile(mode='w+') as output:
         assert values['crc16_errors'] == 30, values
         assert values['ref_sys_msgs_pub'] == 30, values
         assert values['ping_msgs_pub'] == 30, values
-        send_for(ping)
+        ping_count = 30 + send_for(ping)
         assert any(level == 0 for level, _, _ in observations), observations
         observations.clear()
         spin_until(lambda: any(level == 2 and 'No bytes' in text
@@ -107,14 +110,15 @@ with tempfile.TemporaryFile(mode='w+') as output:
         # All suppressed samples remain in counters, with first logs visible.
         output.seek(0)
         text = output.read()
-        for sample in ('[ref_sys RX', '[ping RX]', 'CRC8 mismatch', 'CRC16 mismatch'):
+        for sample in ('[ref_sys RX', 'CRC8 mismatch', 'CRC16 mismatch'):
             assert text.count(sample) == 1, (sample, text)
+        assert text.count('[ping RX]') == ping_count, text
         assert 'DIAG' not in text, text
         if len(sys.argv) > 2:
             Path(sys.argv[2]).write_text(text)
         print('PASS: ERROR(no bytes) -> WARN(30 CRC8 + 30 CRC16) -> OK -> '
               'ERROR(stalled) -> ERROR(no frames); 60 frames counted; '
-              'first sample visible, repeats suppressed; diagnostics with text disabled')
+              'REF_SYS/CRC repeats suppressed, every PING visible; diagnostics with text disabled')
     finally:
         process.send_signal(signal.SIGINT)
         process.wait(timeout=5)

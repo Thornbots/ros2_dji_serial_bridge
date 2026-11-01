@@ -796,7 +796,7 @@ private:
     msg.number = payload[0];
     ping_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
     if (debug_log_) {
-      RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000, "[ping RX] 0x%02x (%u)", msg.number,
+      RCLCPP_INFO(get_logger(), "[ping RX] 0x%02x (%u)", msg.number,
         msg.number);
     }
     ping_pub_->publish(msg);
@@ -856,7 +856,7 @@ private:
       const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
       // Raw aim pose and corrected navigation position are different frames.
       if (have_pose_.load(std::memory_order_relaxed)) {
-        RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000,
+        RCLCPP_INFO(get_logger(),
                             "[relocalize TX #%lu] raw aim pose (last received): "
                             "x=%.3f y=%.3f  ->  navigation fix: x=%.3f y=%.3f",
                             count,
@@ -864,7 +864,7 @@ private:
                             last_pose_y_.load(std::memory_order_relaxed),
                             msg->point.x, msg->point.y);
       } else {
-        RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000,
+        RCLCPP_INFO(get_logger(),
                             "[relocalize TX #%lu] raw aim pose: N/A "
                             "(no ~/pose received yet)  ->  navigation fix: x=%.3f y=%.3f",
                             count, msg->point.x, msg->point.y);
@@ -886,7 +886,7 @@ private:
     if (ok) {
       ping_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
       if (debug_log_) {
-        RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000, "[ping TX] 0x%02x (%u)", p.number,
+        RCLCPP_INFO(get_logger(), "[ping TX] 0x%02x (%u)", p.number,
           p.number);
       }
     } else {
