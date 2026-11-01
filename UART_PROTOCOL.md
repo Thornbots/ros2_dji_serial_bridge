@@ -53,8 +53,11 @@ sends nine POSE then one REF_SYS on one 10 ms timer.
 z up, x toward blue's base, y left. Raw POSE/CV_TARGET coordinates boot at
 (0, 0) for both teams and remain relative to that physical start. Navigation
 coordinates become field-centred after the Jetson's startup RELOCALIZE:
-red (-3.53, -0.426), blue (3.53, -0.426), both facing +y (chassis heading π/2).
-These are temporary spooky scrim values (unmeasured); the ARCC start was (±4.625, 0).
+the position comes from that team's Jetson launch configuration, not firmware.
+`thornbots_pkg/auto.launch.py` owns `red_start_x`, `red_start_y`, `blue_start_x`,
+`blue_start_y` defaults; `/etc/thornbots/launch.env` can override each independently
+through `AUTO_LAUNCH_ARGS` ([configuration](../thornbots_pkg/README.md#point_to_cv_target)).
+Both teams face +y at boot (chassis heading π/2).
 `root` stays heading-fixed at yaw 0 for both teams; both `chassis_yaw` joints
 should be π/2. This is the physical boot contract, not proof of firmware
 configuration or telemetry: current POSE omits chassis yaw and the bridge
