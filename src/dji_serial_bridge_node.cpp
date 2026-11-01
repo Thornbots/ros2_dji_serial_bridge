@@ -39,6 +39,7 @@
 #include <vector>
 
 #include <rclcpp/rclcpp.hpp>
+#include <diagnostic_updater/diagnostic_updater.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
@@ -212,6 +213,10 @@ public:
       RCLCPP_INFO(get_logger(), "Diagnostic summary disabled");
     }
 
+    updater_ = std::make_unique<diagnostic_updater::Updater>(this);
+    updater_->setHardwareID(device);
+    updater_->add("Serial link", this, &DjiSerialBridge::diagnose);
+
     // ── Read thread ───────────────────────────────────────────────────────
     running_.store(true);
     read_thread_ = std::thread(&DjiSerialBridge::read_loop, this, poll_ms);
@@ -268,6 +273,42 @@ private:
   std::atomic<uint64_t> silent_polls_{0};
   // Wire time of one byte at the configured baud; see frame_stamp().
   int64_t byte_wire_ns_{0};
+
+  rclcpp::Clock log_clock_{RCL_STEADY_TIME};
+  std::unique_ptr<diagnostic_updater::Updater> updater_;
+  uint64_t previous_bytes_{0}, previous_frames_{0}, previous_crc_{0};
+
+  void diagnose(diagnostic_updater::DiagnosticStatusWrapper & status)
+  {
+    using Status = diagnostic_msgs::msg::DiagnosticStatus;
+    const auto bytes = bytes_rx_.load();
+    const auto frames = frames_rx_.load();
+    const auto crc = crc8_errors_.load() + crc16_errors_.load();
+    if (bytes == previous_bytes_) {
+      status.summary(Status::ERROR, "No bytes received in interval");
+    } else if (frames == previous_frames_) {
+      status.summary(Status::ERROR, "Bytes received but no valid frames in interval");
+    } else if (crc > previous_crc_) {
+      status.summary(Status::WARN, "CRC failures increased in interval");
+    } else {
+      status.summary(Status::OK, "Serial frames arriving");
+    }
+    status.add("bytes_rx", bytes);
+    status.add("frames_rx", frames);
+    status.add("crc8_errors", crc8_errors_.load());
+    status.add("crc16_errors", crc16_errors_.load());
+    status.add("pose_msgs_pub", pose_msgs_pub_.load());
+    status.add("ref_sys_msgs_pub", ref_sys_msgs_pub_.load());
+    status.add("ping_msgs_pub", ping_msgs_pub_.load());
+    status.add("nav_goal_msgs_tx", nav_goal_msgs_tx_.load());
+    status.add("cv_target_msgs_tx", cv_target_msgs_tx_.load());
+    status.add("relocalize_msgs_tx", relocalize_msgs_tx_.load());
+    status.add("ping_msgs_tx", ping_msgs_tx_.load());
+    status.add("silent_polls", silent_polls_.load());
+    previous_bytes_ = bytes;
+    previous_frames_ = frames;
+    previous_crc_ = crc;
+  }
 
   void print_diagnostics()
   {
@@ -527,7 +568,7 @@ private:
       uint8_t expected_crc8 = calculateCRC8(buf.data(), CRC8_COVERAGE);
       if (expected_crc8 != hdr.crc8 && enforce_crc_) {
         crc8_errors_.fetch_add(1, std::memory_order_relaxed);
-        RCLCPP_WARN(get_logger(),
+        RCLCPP_WARN_THROTTLE(get_logger(), log_clock_, 5000,
                             "CRC8 mismatch (seq=%u, got=0x%02x expected=0x%02x) — dropping byte",
                             hdr.seq, hdr.crc8, expected_crc8);
         drop(1);
@@ -551,7 +592,7 @@ private:
 
       if (recv_crc16 != calc_crc16 && enforce_crc_) {
         crc16_errors_.fetch_add(1, std::memory_order_relaxed);
-        RCLCPP_WARN(get_logger(),
+        RCLCPP_WARN_THROTTLE(get_logger(), log_clock_, 5000,
                             "CRC16 mismatch (seq=%u, msgType=%u, dataLen=%u, "
                             "got=0x%04x expected=0x%04x) — dropping byte",
                             hdr.seq, hdr.msgType, hdr.dataLength, recv_crc16, calc_crc16);
@@ -723,11 +764,11 @@ private:
     const uint64_t count =
       ref_sys_msgs_pub_.fetch_add(1, std::memory_order_relaxed) + 1;
 
-    // Log every ref_sys message received. debug_log_ is cached from the
+    // Sample ref_sys logs every five seconds. debug_log_ is cached from the
     // parameter at construction -- this runs on the serial read thread at
     // 10 Hz, so don't do a parameter lookup per frame.
     if (debug_log_) {
-      RCLCPP_INFO(get_logger(),
+      RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000,
                         "[ref_sys RX #%lu] stage=%u time_rem=%u hp=%u robot_id=%u "
                         "blue=%u healing=%u reload=%u center=%u "
                         "team_center=%u opp_center=%u "
@@ -755,7 +796,8 @@ private:
     msg.number = payload[0];
     ping_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
     if (debug_log_) {
-      RCLCPP_INFO(get_logger(), "[ping RX] 0x%02x (%u)", msg.number, msg.number);
+      RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000, "[ping RX] 0x%02x (%u)", msg.number,
+        msg.number);
     }
     ping_pub_->publish(msg);
   }
@@ -814,7 +856,7 @@ private:
       const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
       // Raw aim pose and corrected navigation position are different frames.
       if (have_pose_.load(std::memory_order_relaxed)) {
-        RCLCPP_INFO(get_logger(),
+        RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000,
                             "[relocalize TX #%lu] raw aim pose (last received): "
                             "x=%.3f y=%.3f  ->  navigation fix: x=%.3f y=%.3f",
                             count,
@@ -822,7 +864,7 @@ private:
                             last_pose_y_.load(std::memory_order_relaxed),
                             msg->point.x, msg->point.y);
       } else {
-        RCLCPP_INFO(get_logger(),
+        RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000,
                             "[relocalize TX #%lu] raw aim pose: N/A "
                             "(no ~/pose received yet)  ->  navigation fix: x=%.3f y=%.3f",
                             count, msg->point.x, msg->point.y);
@@ -844,7 +886,8 @@ private:
     if (ok) {
       ping_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
       if (debug_log_) {
-        RCLCPP_INFO(get_logger(), "[ping TX] 0x%02x (%u)", p.number, p.number);
+        RCLCPP_INFO_THROTTLE(get_logger(), log_clock_, 5000, "[ping TX] 0x%02x (%u)", p.number,
+          p.number);
       }
     } else {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
