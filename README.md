@@ -4,7 +4,7 @@ ROS 2 node bridging the DJI-framed UART protocol spoken by the MCB (main
 control board) with ROS 2 topics.
 
 **Wire formats: [`UART_PROTOCOL.md`](UART_PROTOCOL.md)** — frame layout, all
-six message IDs, byte tables both directions, REF_SYS bits, POSE odom
+seven message IDs, byte tables both directions, REF_SYS bits, POSE odom
 status codes. Read it before touching `dji_protocol.hpp` or any `msg/` file
 that crosses the link.
 
@@ -127,7 +127,7 @@ moving-shooter acceptance are in [ROADMAP track B](../docs/ROADMAP.md#b-hit-whil
 ## Topics
 
 One per message ID, two for `PING`: `~/nav_goal`, `~/cv_target`, `~/pose`,
-`~/ref_sys`, `~/relocalize`, `~/ping_to_mcb`, `~/ping_from_mcb`. Types and directions are in the summary table in
+`~/ref_sys`, `~/debug`, `~/relocalize`, `~/ping_to_mcb`, `~/ping_from_mcb`. Types and directions are in the summary table in
 `UART_PROTOCOL.md`. They live in the node's private namespace, so `~/nav_goal`
 is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 
@@ -141,6 +141,14 @@ for the freshness limits and flag semantics. CV decisions also expire at the
 bridge write boundary; see the
 [decision freshness policy](UART_PROTOCOL.md#cv-decision-freshness) for clock
 requirements, rejected stamps and serial queuing limits.
+
+Firmware developers can queue opaque byte blobs with `JetsonSubsystem::sendDebug`.
+`~/debug` publishes `DebugBlob` with a send-start stamp and empty frame ID;
+the bridge leaves its bytes untouched. The startup recorder includes it in
+normal and match bags. Decode offline against the producing firmware.
+See the [DEBUG contract](UART_PROTOCOL.md#debug-id6--opaque-firmware-debug) for
+payload limits, loss behavior and link budget. No debug producer is enabled
+in production firmware.
 
 ## Parameters
 

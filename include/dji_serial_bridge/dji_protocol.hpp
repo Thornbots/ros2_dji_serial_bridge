@@ -39,8 +39,11 @@ enum class McbMsgType : uint16_t
   POSE       = 2,    // MCB → Jetson : ~/pose        (PosePayload)
   REF_SYS    = 3,    // MCB → Jetson : ~/ref_sys     (RefSysPayload)
   RELOCALIZE = 4,    // Jetson → MCB : ~/relocalize  (RelocalizePayload)
+  DEBUG      = 6,    // MCB → Jetson : ~/debug (DebugBlob), opaque bytes
   PING       = 5,    // both ways    : ~/ping_to_mcb, ~/ping_from_mcb  (PingPayload)
 };
+
+static constexpr size_t DEBUG_MAX_PAYLOAD = 32;
 
 // ─── DJI wire header  (exactly 7 bytes) ─────────────────────────────────────
 struct __attribute__((packed)) FrameHeader

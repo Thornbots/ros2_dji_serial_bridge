@@ -15,7 +15,7 @@
 // dji_serial_bridge_node.cpp
 //
 // ROS 2 node that bridges the Jetson-side DJI-framed UART protocol (MCB)
-// with ROS topics, handling all six message types defined in
+// with ROS topics, handling all seven message types defined in
 // dji_protocol.hpp. Topics live in the node's private namespace
 // (e.g. ~/nav_goal), so remap them in a launch file as needed.
 // Parameters are in config/dji_bridge_params.yaml.
@@ -43,6 +43,7 @@
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
 #include "dji_serial_bridge/msg/ping.hpp"
+#include "dji_serial_bridge/msg/debug_blob.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
 #include "dji_serial_bridge/msg/ref_sys_status.hpp"
 
@@ -173,10 +174,12 @@ public:
             "~/pose", rclcpp::SensorDataQoS());
     ref_sys_pub_ = create_publisher<dji_serial_bridge::msg::RefSysStatus>(
             "~/ref_sys", rclcpp::SensorDataQoS());
+    debug_pub_ = create_publisher<dji_serial_bridge::msg::DebugBlob>(
+            "~/debug", rclcpp::SensorDataQoS());
     ping_pub_ = create_publisher<dji_serial_bridge::msg::Ping>("~/ping_from_mcb", 10);
 
     RCLCPP_INFO(get_logger(),
-                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb");
+                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb  ~/debug");
 
     // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
     using std::placeholders::_1;
@@ -534,6 +537,14 @@ private:
         continue;
       }
 
+      // Reject impossible debug lengths before waiting for a potentially huge frame.
+      if (hdr.msgType == static_cast<uint16_t>(McbMsgType::DEBUG) &&
+        hdr.dataLength > DEBUG_MAX_PAYLOAD)
+      {
+        drop(1);
+        continue;
+      }
+
       // ── 3. Wait until the full frame has arrived ────────────────────
       size_t total_len = sizeof(FrameHeader) + hdr.dataLength + 2u;
       if (buf.size() < total_len) {
@@ -598,6 +609,9 @@ private:
         break;
       case McbMsgType::REF_SYS:
         handle_ref_sys(payload, len, stamp);
+        break;
+      case McbMsgType::DEBUG:
+        handle_debug(payload, len, stamp);
         break;
       case McbMsgType::PING:
         handle_ping(payload, len, stamp);
@@ -741,6 +755,17 @@ private:
     ref_sys_pub_->publish(msg);
   }
 
+  void handle_debug(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
+  {
+    if (len > DEBUG_MAX_PAYLOAD) {
+      return;
+    }
+    auto msg = dji_serial_bridge::msg::DebugBlob{};
+    msg.header.stamp = stamp;
+    msg.data.assign(payload, payload + len);
+    debug_pub_->publish(msg);
+  }
+
   void handle_ping(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
     if (len != sizeof(PingPayload)) {
@@ -869,6 +894,7 @@ private:
   rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr pose_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::Ping>::SharedPtr ping_pub_;
+  rclcpp::Publisher<dji_serial_bridge::msg::DebugBlob>::SharedPtr debug_pub_;
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
