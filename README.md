@@ -159,15 +159,33 @@ line is silently ignored.
 
 ## Diagnostics
 
-Every `diag_interval_s` the node prints bytes received, frames decoded, CRC
-error counts and per-topic message counts. Read it as:
+The text DIAG summary retains lifetime byte, frame, CRC and per-topic counters
+every `diag_interval_s` (0 disables text only). REF_SYS and CRC warning samples
+log immediately on the first occurrence, then at most once
+per five seconds per call site, using a steady clock. Counters include suppressed
+samples. RELOCALIZE and PING log every event; `debug_log=false` disables
+REF_SYS and PING logs. Pose logs
+its first message and odometry-source transitions immediately.
 
-| Observation               | Likely cause                                        |
-|---------------------------|-----------------------------------------------------|
-| bytes=0, frames=0         | nothing arriving (cable? power? baud?)              |
-| bytes>0, frames=0         | not framing (baud mismatch, CRC, wrong frame format)|
-| bytes>0, frames>0, pose=0 | decoding, but no pose (unexpected msgType from MCB?)|
-| bytes>0, frames>0, pose>0 | healthy                                             |
+`diagnostic_updater` publishes `diagnostic_msgs/DiagnosticArray` on
+`/diagnostics`, independently of text logging, every
+`diagnostic_updater.period` seconds (default 1). The `Serial link` status
+uses the device path as hardware ID and includes every DIAG counter, including
+`silent_polls`. Its header stamp is the time the health observation was made.
+Levels use changes since the previous update, so a formerly healthy link can
+become unhealthy:
+
+| Level | Observation during the interval | Likely cause |
+| --- | --- | --- |
+| ERROR | No new bytes | cable, power, or stopped sender |
+| ERROR | New bytes but no new valid frames | baud, framing or CRC mismatch |
+| WARN | Valid frames arrive, but CRC failures increase | noisy or corrupt link |
+| OK | Valid frames arrive without new CRC failures | healthy transport |
+
+The first update compares against zero. Missing pose traffic alone does not
+change transport health: inspect `pose_msgs_pub` for unexpected MCB message
+types. Historical CRC failures remain in the counters after health recovers.
+Inspect with `ros2 topic echo /diagnostics` or `rqt_robot_monitor`.
 
 ## Usage
 
@@ -200,6 +218,8 @@ test frames therefore retain that existing limitation; raw hex and byte logs
 are unaffected.
 
 `colcon test --packages-select dji_serial_bridge` runs the diagnostic parser
-and PTY transport gtests plus ament lint. The parser fixtures preserve the
+and PTY transport gtests, the live PTY bridge-health test, plus ament lint.
+The health test injects valid and corrupt frames, checks exact counters and
+throttled logs, and verifies health recovery and stalls on `/diagnostics`. The parser fixtures preserve the
 former Python diagnostic's bytes and printed error lines. No hardware or
 running ROS graph is needed for these unit tests.
