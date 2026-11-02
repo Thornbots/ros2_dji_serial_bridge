@@ -43,7 +43,7 @@ enum class McbMsgType : uint16_t
   PING       = 5,    // both ways    : ~/ping_to_mcb, ~/ping_from_mcb  (PingPayload)
 };
 
-static constexpr size_t DEBUG_MAX_PAYLOAD = 32;
+static constexpr size_t DEBUG_MAX_PAYLOAD = 128;
 
 // ─── DJI wire header  (exactly 7 bytes) ─────────────────────────────────────
 struct __attribute__((packed)) FrameHeader

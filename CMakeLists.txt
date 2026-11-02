@@ -11,6 +11,8 @@ endif()
 # ── Find dependencies ──────────────────────────────────────────────────────────
 find_package(ament_cmake        REQUIRED)
 find_package(rclcpp             REQUIRED)
+find_package(diagnostic_updater REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(std_msgs           REQUIRED)
 find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs      REQUIRED)
@@ -47,6 +49,8 @@ target_include_directories(dji_serial_bridge_node
 
 ament_target_dependencies(dji_serial_bridge_node
   rclcpp
+  diagnostic_updater
+  diagnostic_msgs
   std_msgs
   geometry_msgs
 )
@@ -87,6 +91,10 @@ if(BUILD_TESTING)
     COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
       ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_debug_parser.py
   )
+  add_test(NAME test_bridge_health
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bridge_health.py
+      $<TARGET_FILE:dji_serial_bridge_node>)
+  set_tests_properties(test_bridge_health PROPERTIES TIMEOUT 30)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_diagnostic_frames test/test_diagnostic_frames.cpp)
   target_include_directories(test_diagnostic_frames PRIVATE include)

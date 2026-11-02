@@ -46,7 +46,7 @@ struct Publisher
 };
 struct Bridge
 {
-  std::atomic<size_t> frames_rx_{0}, crc8_errors_{0}, crc16_errors_{0};
+  std::atomic<size_t> frames_rx_{0}, crc8_errors_{0}, crc16_errors_{0}, debug_msgs_pub_{0};
   bool enforce_crc_ = true;
   int64_t byte_wire_ns_ = 86805;
   Publisher publisher;
@@ -112,4 +112,6 @@ int main()
   assert(bridge.publisher.messages.size() == 4);
   assert(bridge.crc16_errors_ == 1);
   assert(bridge.poses == 1);
+  assert(DEBUG_MAX_PAYLOAD == 128);
+  assert(bridge.debug_msgs_pub_ == 4);
 }
