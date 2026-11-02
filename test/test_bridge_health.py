@@ -98,6 +98,10 @@ with tempfile.TemporaryFile(mode='w+') as output:
         assert values['crc16_errors'] == 30, values
         assert values['ref_sys_msgs_pub'] == 30, values
         assert values['ping_msgs_pub'] == 30, values
+        os.write(master, frame(6, bytes(range(128))))
+        spin_until(lambda: any(values['debug_msgs_pub'] == 1
+                               for _, _, values in observations))
+        assert max(values['frames_rx'] for _, _, values in observations) == 61
         ping_count = 30 + send_for(ping)
         assert any(level == 0 for level, _, _ in observations), observations
         observations.clear()
@@ -117,7 +121,7 @@ with tempfile.TemporaryFile(mode='w+') as output:
         if len(sys.argv) > 2:
             Path(sys.argv[2]).write_text(text)
         print('PASS: ERROR(no bytes) -> WARN(30 CRC8 + 30 CRC16) -> OK -> '
-              'ERROR(stalled) -> ERROR(no frames); 60 frames counted; '
+              'ERROR(stalled) -> ERROR(no frames); 61 frames counted including 128-byte DEBUG; '
               'REF_SYS/CRC repeats suppressed, every PING visible; diagnostics with text disabled')
     finally:
         process.send_signal(signal.SIGINT)

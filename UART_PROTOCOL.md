@@ -41,8 +41,10 @@ retransmission, acknowledgement or flow control in either direction.
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 
+| 6 | `DEBUG` | MCB → Jetson | opaque bytes | 0–128 | `~/debug` | `dji_serial_bridge/msg/DebugBlob` | caller-driven, best effort |
+
 Each message is named after its topic, and its payload fields after the ROS
-fields they carry. IDs 0-5 match `enum UartMessage` in the firmware's
+fields they carry. IDs 0-6 match `enum UartMessage` in the firmware's
 `JetsonSubsystem.hpp`. Topics are in the node's private namespace:
 `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped. The firmware
 sends nine POSE then one REF_SYS on one 10 ms timer.
@@ -346,6 +348,47 @@ Firmware retains the latest hit bearing across control cycles until a
 REF_SYS frame successfully reports it. Multiple hits before that report
 replace the pending bearing; a following report without a new hit carries 123.
 The node unpacks the byte into the eight named booleans.
+
+---
+
+### DEBUG (id=6) — opaque firmware debug
+
+The payload is 0–128 uninterpreted bytes, with no tags, schema or padding.
+`dataLength` is its exact length; frames are 9–137 bytes. The bridge publishes
+`DebugBlob.data` unchanged on `~/debug` with SensorDataQoS, empty `frame_id`
+and the same estimated frame send-start stamp as POSE. Oversized debug headers
+are rejected before waiting for the payload. Firmware developers own offline
+decoding against the firmware revision that produced the bag.
+
+`JetsonSubsystem::sendDebug(data, length)` is a nonblocking, bounded API for
+cooperative firmware callers; there is no production sender or sampling timer.
+Debug is expendable: queue rejection, link saturation and ROS best-effort loss
+are allowed. It has no effect on robot behavior and no acknowledgement.
+The firmware gives overdue telemetry priority and admits debug as fast as
+available UART budget allows, with one shared pending slot and no fixed rate
+limit. At 115200 baud (8N1), a maximum 137-byte frame takes 11,893 µs.
+Admission reserves its full airtime, a maximum POSE frame airtime (2,952 µs),
+and 2 ms for servicing the two completions. Both debug and the delayed telemetry
+must finish before the *second* future 10 ms telemetry deadline.
+Thus one debug frame can delay at most one POSE or REF_SYS frame. Telemetry
+retains every deadline (nine POSE, one REF_SYS per 100 ms); late frames are sent
+before another debug frame. Under a continuous maximum-size flood, long-run
+rates remain 90 Hz POSE and 10 Hz REF_SYS, with no skipped slots.
+
+Worst-case added POSE latency is **10 ms**, giving a maximum 30 ms POSE
+inter-arrival gap across a REF_SYS slot. This bound assumes cooperative loop
+service at least every 1 ms, a writable link and the configured baud; a stalled
+loop or transport fault is outside it. POSE and REF_SYS are sampled and stamped
+at actual frame send start, not their nominal deadline. Wire-idle accounting
+uses the same baud constant as UART initialization and requires the STM32
+transmission-complete flag, including the final shift-register byte. See the firmware's
+[debug API](../firmware/MCBV3/README.md#opaque-debug-blobs) for caller lifetime
+rules. RX polling remains independent and runs before TX admission: debug
+must not affect CV_TARGET or RELOCALIZE reception or their mailboxes.
+
+The startup per-run recorder includes `/dji_serial_bridge/debug` in normal
+and match runs whenever bag recording is enabled. No content is enabled by
+default; individual firmware developers choose what and when to send.
 
 ---
 

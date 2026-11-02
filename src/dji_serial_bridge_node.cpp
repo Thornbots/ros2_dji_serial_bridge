@@ -15,7 +15,7 @@
 // dji_serial_bridge_node.cpp
 //
 // ROS 2 node that bridges the Jetson-side DJI-framed UART protocol (MCB)
-// with ROS topics, handling all six message types defined in
+// with ROS topics, handling all seven message types defined in
 // dji_protocol.hpp. Topics live in the node's private namespace
 // (e.g. ~/nav_goal), so remap them in a launch file as needed.
 // Parameters are in config/dji_bridge_params.yaml.
@@ -44,6 +44,7 @@
 
 #include "dji_serial_bridge/msg/cv_target.hpp"
 #include "dji_serial_bridge/msg/ping.hpp"
+#include "dji_serial_bridge/msg/debug_blob.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
 #include "dji_serial_bridge/msg/ref_sys_status.hpp"
 
@@ -174,10 +175,12 @@ public:
             "~/pose", rclcpp::SensorDataQoS());
     ref_sys_pub_ = create_publisher<dji_serial_bridge::msg::RefSysStatus>(
             "~/ref_sys", rclcpp::SensorDataQoS());
+    debug_pub_ = create_publisher<dji_serial_bridge::msg::DebugBlob>(
+            "~/debug", rclcpp::SensorDataQoS());
     ping_pub_ = create_publisher<dji_serial_bridge::msg::Ping>("~/ping_from_mcb", 10);
 
     RCLCPP_INFO(get_logger(),
-                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb");
+                    "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb  ~/debug");
 
     // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
     using std::placeholders::_1;
@@ -253,6 +256,7 @@ private:
   std::atomic<uint64_t> frames_rx_{0};
   std::atomic<uint64_t> crc8_errors_{0};
   std::atomic<uint64_t> crc16_errors_{0};
+  std::atomic<uint64_t> debug_msgs_pub_{0};
   std::atomic<uint64_t> pose_msgs_pub_{0};
   std::atomic<uint64_t> ref_sys_msgs_pub_{0};
   std::atomic<uint64_t> nav_goal_msgs_tx_{0};
@@ -297,6 +301,7 @@ private:
     status.add("frames_rx", frames);
     status.add("crc8_errors", crc8_errors_.load());
     status.add("crc16_errors", crc16_errors_.load());
+    status.add("debug_msgs_pub", debug_msgs_pub_.load());
     status.add("pose_msgs_pub", pose_msgs_pub_.load());
     status.add("ref_sys_msgs_pub", ref_sys_msgs_pub_.load());
     status.add("ping_msgs_pub", ping_msgs_pub_.load());
@@ -316,6 +321,7 @@ private:
     const uint64_t frx = frames_rx_.load(std::memory_order_relaxed);
     const uint64_t c8 = crc8_errors_.load(std::memory_order_relaxed);
     const uint64_t c16 = crc16_errors_.load(std::memory_order_relaxed);
+    const uint64_t debug = debug_msgs_pub_.load(std::memory_order_relaxed);
     const uint64_t pose = pose_msgs_pub_.load(std::memory_order_relaxed);
     const uint64_t ref = ref_sys_msgs_pub_.load(std::memory_order_relaxed);
     const uint64_t ng = nav_goal_msgs_tx_.load(std::memory_order_relaxed);
@@ -333,7 +339,7 @@ private:
                         "     Check: cable connected? MCB powered? baud rate matches?\n"
                         "     silent_polls=%lu  (each poll_ms timeout = no data arriving)\n"
                         "  RX  bytes=0  frames=0  crc8_err=0  crc16_err=0\n"
-                        "  PUB pose=0  ref_sys=0  ping=0\n"
+                        "  PUB pose=0  ref_sys=0  ping=0  debug=0\n"
                         "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
                         sil, ng, cv, rl, ptx);
@@ -344,7 +350,7 @@ private:
                         "     Check: baud rate, frame head (0xA5), CRC settings\n"
                         "     crc8_err=%lu  crc16_err=%lu\n"
                         "  RX  bytes=%lu  frames=0\n"
-                        "  PUB pose=0  ref_sys=0  ping=0\n"
+                        "  PUB pose=0  ref_sys=0  ping=0  debug=0\n"
                         "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
                         brx, c8, c16, brx, ng, cv, rl, ptx);
@@ -352,10 +358,10 @@ private:
       RCLCPP_INFO(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
                         "  ✓ RX  bytes=%lu  frames=%lu  crc8_err=%lu  crc16_err=%lu\n"
-                        "  ✓ PUB pose=%lu  ref_sys=%lu  ping=%lu\n"
+                        "  ✓ PUB pose=%lu  ref_sys=%lu  ping=%lu  debug=%lu\n"
                         "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, frx, c8, c16, pose, ref, ppub, ng, cv, rl, ptx);
+                        brx, frx, c8, c16, pose, ref, ppub, debug, ng, cv, rl, ptx);
     }
   }
 
@@ -575,6 +581,14 @@ private:
         continue;
       }
 
+      // Reject impossible debug lengths before waiting for a potentially huge frame.
+      if (hdr.msgType == static_cast<uint16_t>(McbMsgType::DEBUG) &&
+        hdr.dataLength > DEBUG_MAX_PAYLOAD)
+      {
+        drop(1);
+        continue;
+      }
+
       // ── 3. Wait until the full frame has arrived ────────────────────
       size_t total_len = sizeof(FrameHeader) + hdr.dataLength + 2u;
       if (buf.size() < total_len) {
@@ -639,6 +653,9 @@ private:
         break;
       case McbMsgType::REF_SYS:
         handle_ref_sys(payload, len, stamp);
+        break;
+      case McbMsgType::DEBUG:
+        handle_debug(payload, len, stamp);
         break;
       case McbMsgType::PING:
         handle_ping(payload, len, stamp);
@@ -782,6 +799,18 @@ private:
     ref_sys_pub_->publish(msg);
   }
 
+  void handle_debug(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
+  {
+    if (len > DEBUG_MAX_PAYLOAD) {
+      return;
+    }
+    auto msg = dji_serial_bridge::msg::DebugBlob{};
+    msg.header.stamp = stamp;
+    msg.data.assign(payload, payload + len);
+    debug_pub_->publish(msg);
+    debug_msgs_pub_.fetch_add(1, std::memory_order_relaxed);
+  }
+
   void handle_ping(const uint8_t *payload, uint16_t len, const rclcpp::Time & stamp)
   {
     if (len != sizeof(PingPayload)) {
@@ -912,6 +941,7 @@ private:
   rclcpp::Publisher<dji_serial_bridge::msg::RobotPose>::SharedPtr pose_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::RefSysStatus>::SharedPtr ref_sys_pub_;
   rclcpp::Publisher<dji_serial_bridge::msg::Ping>::SharedPtr ping_pub_;
+  rclcpp::Publisher<dji_serial_bridge::msg::DebugBlob>::SharedPtr debug_pub_;
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;

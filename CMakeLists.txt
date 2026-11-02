@@ -28,6 +28,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PanelDetectionArray.msg"
   "msg/TargetState.msg"
   "msg/Ping.msg"
+  "msg/DebugBlob.msg"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 
@@ -85,6 +86,10 @@ if(BUILD_TESTING)
   add_test(NAME test_cv_target_boundary
     COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
       ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cv_target_boundary.py
+  )
+  add_test(NAME test_debug_parser
+    COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_debug_parser.py
   )
   add_test(NAME test_bridge_health
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bridge_health.py
