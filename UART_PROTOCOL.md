@@ -40,7 +40,6 @@ retransmission, acknowledgement or flow control in either direction.
 | 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | 10 Hz         |
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
-
 | 6 | `DEBUG` | MCB → Jetson | opaque bytes | 0–128 | `~/debug` | `dji_serial_bridge/msg/DebugBlob` | caller-driven, best effort |
 
 Each message is named after its topic, and its payload fields after the ROS
@@ -379,7 +378,11 @@ Worst-case added POSE latency is **10 ms**, giving a maximum 30 ms POSE
 inter-arrival gap across a REF_SYS slot. This bound assumes cooperative loop
 service at least every 1 ms, a writable link and the configured baud; a stalled
 loop or transport fault is outside it. POSE and REF_SYS are sampled and stamped
-at actual frame send start, not their nominal deadline. Wire-idle accounting
+at actual frame send start, not their nominal deadline. After a scheduler service
+gap longer than 100 ms (for example IMU calibration), firmware starts a fresh
+nine-POSE/one-REF_SYS cycle with its first deadline 10 ms after resuming; it does
+not replay samples for the paused interval. Under continuous service, overdue
+slots are retained. Wire-idle accounting
 uses the same baud constant as UART initialization and requires the STM32
 transmission-complete flag, including the final shift-register byte. See the firmware's
 [debug API](../firmware/MCBV3/README.md#opaque-debug-blobs) for caller lifetime
