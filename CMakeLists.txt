@@ -28,6 +28,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PanelDetectionArray.msg"
   "msg/TargetState.msg"
   "msg/Ping.msg"
+  "msg/DebugBlob.msg"
   DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 
@@ -86,6 +87,10 @@ if(BUILD_TESTING)
     COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
       ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cv_target_boundary.py
   )
+  add_test(NAME test_debug_parser
+    COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_debug_parser.py
+  )
   add_test(NAME test_bridge_health
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bridge_health.py
       $<TARGET_FILE:dji_serial_bridge_node>)
@@ -99,6 +104,10 @@ if(BUILD_TESTING)
     src/crc_dji.cpp
     include/dji_serial_bridge/crc_dji.hpp
   )
+  # Model GoogleTest macros explicitly while analyzing every existing source file.
+  find_package(ament_cmake_cppcheck REQUIRED)
+  ament_cppcheck(LIBRARIES googletest INCLUDE_DIRS include EXCLUDE ${AMENT_LINT_AUTO_FILE_EXCLUDE})
+  list(APPEND AMENT_LINT_AUTO_EXCLUDE ament_cmake_cppcheck)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()
