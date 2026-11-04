@@ -242,13 +242,15 @@ nonzero, strictly increasing session identity, the capture time of the state
 encoded in `header.stamp`, its complete-frame delivery time in `delivery_time`,
 and the entire original UART frame including CRCs.
 The bridge matches complete CRC-valid frames and metadata in order, independent
-of which arrives first. It waits for ROS time to reach the delivery time and
-fails if the clock overshoots. It publishes the translated message with that capture
+of which arrives first. Matching runs on serial, metadata and `/clock` events;
+the bridge waits for its observed clock to reach the delivery time and fails
+if the clock overshoots or goes backwards. It publishes the translated message with that capture
 stamp, then emits reliable `~/sim_frame_ack` (`SimFrameAck`): `published=true`
 means the ROS publish call returned, not that a subscriber received it. The
-ack header is the ROS time at result emission, and its identity matches the
-metadata. `~/sim_clock_ready` reports the bridge's current nonzero ROS time for
-simulator startup synchronization. This interface does not change physical UART bytes.
+ack header is the observed delivery time, and its identity matches the
+metadata. `~/sim_clock_ready` first reports zero when the bridge's clock
+subscription matches a publisher, then reports each observed nonzero ROS time
+for simulator startup synchronization. This interface does not change physical UART bytes.
 
 Both pending queues hold at most 32 frames. A mismatch, unsupported frame,
 invalid or out-of-order metadata, overflow, or unmatched item after

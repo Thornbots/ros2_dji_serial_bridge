@@ -43,6 +43,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <diagnostic_updater/diagnostic_updater.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <rosgraph_msgs/msg/clock.hpp>
 #include <std_msgs/msg/header.hpp>
 
 #include "dji_serial_bridge/msg/sim_frame_metadata.hpp"
@@ -211,7 +212,8 @@ public:
           return result;
         });
       ack_pub_ = create_publisher<dji_serial_bridge::msg::SimFrameAck>("~/sim_frame_ack", 32);
-      ready_pub_ = create_publisher<std_msgs::msg::Header>("~/sim_clock_ready", 10);
+      ready_pub_ = create_publisher<std_msgs::msg::Header>(
+        "~/sim_clock_ready", rclcpp::QoS(1).reliable().transient_local());
       metadata_sub_ = create_subscription<dji_serial_bridge::msg::SimFrameMetadata>(
         "~/sim_frame_metadata", 32,
         [this](dji_serial_bridge::msg::SimFrameMetadata::SharedPtr msg) {
@@ -231,15 +233,37 @@ public:
           metadata_.push_back({*msg, std::chrono::steady_clock::now()});
           match_frames();
         });
-      coord_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
+      rclcpp::SubscriptionOptions clock_options;
+      clock_options.event_callbacks.matched_callback = [this](rclcpp::MatchedInfo & info) {
+          std::lock_guard<std::mutex> lock(coord_mutex_);
+          if (info.current_count > 0 && coord_clock_ns_ == 0 && !coord_failed_) {
+            ready_pub_->publish(std_msgs::msg::Header{});
+          }
+        };
+      coord_clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
+        "/clock", rclcpp::ClockQoS(), [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {
             std::lock_guard<std::mutex> lock(coord_mutex_);
             if (coord_failed_) {return;}
-            if (now().nanoseconds() > 0) {
+            const auto & stamp = msg->clock;
+            if (stamp.sec < 0 || stamp.nanosec >= 1000000000u) {
+              fail_coord(0, "invalid ROS clock");
+              return;
+            }
+            const auto observed = rclcpp::Time(stamp, RCL_ROS_TIME).nanoseconds();
+            if (observed < coord_clock_ns_) {
+              fail_coord(0, "ROS clock moved backwards");
+              return;
+            }
+            coord_clock_ns_ = observed;
+            if (observed > 0) {
               std_msgs::msg::Header ready;
-              ready.stamp = now();
+              ready.stamp = stamp;
               ready_pub_->publish(ready);
             }
             match_frames();
+        }, clock_options);
+      coord_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
+            std::lock_guard<std::mutex> lock(coord_mutex_);
             if (coord_failed_) {return;}
             const auto deadline = std::chrono::steady_clock::now() -
             std::chrono::milliseconds(timeout_ms_);
@@ -762,17 +786,16 @@ private:
         fail_coord(meta.frame_id, "frame mismatch or unsupported payload");
         return;
       }
-      const auto delivery = rclcpp::Time(meta.delivery_time, get_clock()->get_clock_type());
-      const auto current = now();
-      if (current < delivery) {return;}
-      if (current > delivery) {
+      const auto delivery = rclcpp::Time(meta.delivery_time, RCL_ROS_TIME).nanoseconds();
+      if (coord_clock_ns_ < delivery) {return;}
+      if (coord_clock_ns_ > delivery) {
         fail_coord(meta.frame_id, "ROS clock overshot frame delivery");
         return;
       }
       dispatch_incoming(hdr.msgType, bytes.data() + sizeof(hdr), hdr.dataLength,
         rclcpp::Time(meta.header.stamp, get_clock()->get_clock_type()));
       dji_serial_bridge::msg::SimFrameAck ack;
-      ack.header.stamp = now();
+      ack.header.stamp = meta.delivery_time;
       ack.frame_id = meta.frame_id;
       ack.published = true;
       ack_pub_->publish(ack);
@@ -1084,6 +1107,8 @@ private:
   rclcpp::Publisher<dji_serial_bridge::msg::SimFrameAck>::SharedPtr ack_pub_;
   rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr ready_pub_;
   rclcpp::Subscription<dji_serial_bridge::msg::SimFrameMetadata>::SharedPtr metadata_sub_;
+  rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr coord_clock_sub_;
+  int64_t coord_clock_ns_{0};
   rclcpp::TimerBase::SharedPtr coord_timer_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_guard_;
   int serial_fd_{-1};
