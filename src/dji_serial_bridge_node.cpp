@@ -33,6 +33,8 @@
 #include <cinttypes>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <deque>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -42,6 +44,8 @@
 #include <diagnostic_updater/diagnostic_updater.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
 
+#include "dji_serial_bridge/msg/sim_frame_metadata.hpp"
+#include "dji_serial_bridge/msg/sim_frame_ack.hpp"
 #include "dji_serial_bridge/msg/cv_target.hpp"
 #include "dji_serial_bridge/msg/ping.hpp"
 #include "dji_serial_bridge/msg/debug_blob.hpp"
@@ -111,6 +115,16 @@ public:
     declare_parameter<bool>("enforce_crc", true);
     declare_parameter<int>("diag_interval_s", 5);
     declare_parameter<bool>("debug_log", true);
+    declare_parameter<bool>("sim_frame_metadata", false);
+    declare_parameter<int>("sim_frame_timeout_ms", 1000);
+    coordinated_ = get_parameter("sim_frame_metadata").as_bool();
+    timeout_ms_ = get_parameter("sim_frame_timeout_ms").as_int();
+    if (coordinated_ && (!get_parameter("use_sim_time").as_bool() ||
+      !get_parameter("enforce_crc").as_bool() || timeout_ms_ <= 0))
+    {
+      throw std::invalid_argument(
+        "sim_frame_metadata requires use_sim_time, CRC and positive timeout");
+    }
 
     const auto device = get_parameter("device").as_string();
     const auto baudrate = get_parameter("baudrate").as_int();
@@ -181,6 +195,49 @@ public:
 
     RCLCPP_INFO(get_logger(),
                     "Publishers ready:  ~/pose  ~/ref_sys  ~/ping_from_mcb  ~/debug");
+
+    if (coordinated_) {
+      parameter_guard_ = add_on_set_parameters_callback(
+        [](const std::vector<rclcpp::Parameter> & params) {
+          rcl_interfaces::msg::SetParametersResult result;
+          result.successful = true;
+          for (const auto & param : params) {
+            if (param.get_name() == "use_sim_time" && !param.as_bool()) {
+              result.successful = false;
+              result.reason = "coordinated input requires simulation time";
+            }
+          }
+          return result;
+        });
+      ack_pub_ = create_publisher<dji_serial_bridge::msg::SimFrameAck>("~/sim_frame_ack", 32);
+      metadata_sub_ = create_subscription<dji_serial_bridge::msg::SimFrameMetadata>(
+        "~/sim_frame_metadata", 32,
+        [this](dji_serial_bridge::msg::SimFrameMetadata::SharedPtr msg) {
+          std::lock_guard<std::mutex> lock(coord_mutex_);
+          if (coord_failed_) {return;}
+          if (msg->frame_id == 0 || msg->frame_id <= last_identity_ ||
+          msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000u ||
+          msg->frame.size() < 9 || msg->frame.size() > 137 || metadata_.size() >= 32)
+          {
+            fail_coord(msg->frame_id, "invalid, out-of-order or overflowing metadata");
+            return;
+          }
+          last_identity_ = msg->frame_id;
+          metadata_.push_back({*msg, std::chrono::steady_clock::now()});
+          match_frames();
+        });
+      coord_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
+            std::lock_guard<std::mutex> lock(coord_mutex_);
+            if (coord_failed_) {return;}
+            const auto deadline = std::chrono::steady_clock::now() -
+            std::chrono::milliseconds(timeout_ms_);
+            if (!metadata_.empty() && metadata_.front().second <= deadline) {
+              fail_coord(metadata_.front().first.frame_id, "serial frame timeout");
+            } else if (!frames_.empty() && frames_.front().second <= deadline) {
+              fail_coord(0, "metadata timeout");
+            }
+        });
+    }
 
     // ── Subscribers (Jetson → MCB) ────────────────────────────────────────
     using std::placeholders::_1;
@@ -288,7 +345,9 @@ private:
     const auto bytes = bytes_rx_.load();
     const auto frames = frames_rx_.load();
     const auto crc = crc8_errors_.load() + crc16_errors_.load();
-    if (bytes == previous_bytes_) {
+    if (coord_failed_.load()) {
+      status.summary(Status::ERROR, "Simulation frame coordination failed");
+    } else if (bytes == previous_bytes_) {
       status.summary(Status::ERROR, "No bytes received in interval");
     } else if (frames == previous_frames_) {
       status.summary(Status::ERROR, "Bytes received but no valid frames in interval");
@@ -620,19 +679,86 @@ private:
                          "process_rx_buffer: valid frame  seq=%u  msgType=%u  dataLen=%u",
                          hdr.seq, hdr.msgType, hdr.dataLength);
       frames_rx_.fetch_add(1, std::memory_order_relaxed);
-      // Bytes read before the clock is valid (sim time 0) have no capture time.
-      const int64_t start_ns = read_ns[total_len - 1] -
-        static_cast<int64_t>(total_len) * byte_wire_ns_;
-      if (start_ns < 0) {
-        RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-                             "Dropping frame msgType=%u: send start %.6f s precedes clock zero",
-                             hdr.msgType, static_cast<double>(start_ns) * 1e-9);
+      if (coordinated_) {
+        enqueue_frame(buf, total_len);
       } else {
-        dispatch_incoming(hdr.msgType, payload, hdr.dataLength, frame_stamp(start_ns));
+        const int64_t start_ns = read_ns[total_len - 1] -
+          static_cast<int64_t>(total_len) * byte_wire_ns_;
+        if (start_ns < 0) {
+          RCLCPP_WARN(get_logger(), "Dropping frame msgType=%u: send start precedes clock zero",
+            hdr.msgType);
+        } else {
+          dispatch_incoming(hdr.msgType, payload, hdr.dataLength, frame_stamp(start_ns));
+        }
       }
 
       // ── 6. Consume the frame ────────────────────────────────────────
       drop(total_len);
+    }
+  }
+
+  void enqueue_frame(const std::vector<uint8_t> & buf, size_t total_len)
+  {
+    std::lock_guard<std::mutex> lock(coord_mutex_);
+    if (coord_failed_) {return;}
+    if (frames_.size() >= 32 || total_len > 137) {
+      fail_coord(0, "serial frame queue overflow or oversized frame");
+    } else {
+      frames_.push_back({std::vector<uint8_t>(buf.begin(), buf.begin() +
+        static_cast<std::ptrdiff_t>(total_len)), std::chrono::steady_clock::now()});
+      match_frames();
+    }
+  }
+
+  void fail_coord(uint64_t id, const std::string & reason)
+  {
+    coord_failed_.store(true);
+    RCLCPP_ERROR(get_logger(), "Simulation frame coordination failed: %s", reason.c_str());
+    dji_serial_bridge::msg::SimFrameAck ack;
+    ack.header.stamp = now();
+    ack.frame_id = id;
+    ack.published = false;
+    ack.reason = reason;
+    ack_pub_->publish(ack);
+    frames_.clear();
+    metadata_.clear();
+  }
+
+  void match_frames()
+  {
+    while (!frames_.empty() && !metadata_.empty() && !coord_failed_) {
+      const auto deadline = std::chrono::steady_clock::now() -
+        std::chrono::milliseconds(timeout_ms_);
+      if (frames_.front().second <= deadline || metadata_.front().second <= deadline) {
+        fail_coord(metadata_.front().first.frame_id, "frame pairing timeout");
+        return;
+      }
+      const auto & bytes = frames_.front().first;
+      const auto & meta = metadata_.front().first;
+      FrameHeader hdr{};
+      std::memcpy(&hdr, bytes.data(), sizeof(hdr));
+      const bool supported =
+        (hdr.msgType == static_cast<uint16_t>(McbMsgType::POSE) &&
+        hdr.dataLength == sizeof(PosePayload)) ||
+        (hdr.msgType == static_cast<uint16_t>(McbMsgType::REF_SYS) &&
+        hdr.dataLength == sizeof(RefSysPayload)) ||
+        (hdr.msgType == static_cast<uint16_t>(McbMsgType::PING) &&
+        hdr.dataLength == sizeof(PingPayload)) ||
+        (hdr.msgType == static_cast<uint16_t>(McbMsgType::DEBUG) &&
+        hdr.dataLength <= DEBUG_MAX_PAYLOAD);
+      if (bytes != meta.frame || !supported) {
+        fail_coord(meta.frame_id, "frame mismatch or unsupported payload");
+        return;
+      }
+      dispatch_incoming(hdr.msgType, bytes.data() + sizeof(hdr), hdr.dataLength,
+        rclcpp::Time(meta.header.stamp, get_clock()->get_clock_type()));
+      dji_serial_bridge::msg::SimFrameAck ack;
+      ack.header.stamp = now();
+      ack.frame_id = meta.frame_id;
+      ack.published = true;
+      ack_pub_->publish(ack);
+      frames_.pop_front();
+      metadata_.pop_front();
     }
   }
 
@@ -928,6 +1054,18 @@ private:
   // Member variables
   // ═══════════════════════════════════════════════════════════════════════
 
+  using SteadyTime = std::chrono::steady_clock::time_point;
+  bool coordinated_{false};
+  int timeout_ms_{1000};
+  std::atomic<bool> coord_failed_{false};
+  std::mutex coord_mutex_;
+  uint64_t last_identity_{0};
+  std::deque<std::pair<std::vector<uint8_t>, SteadyTime>> frames_;
+  std::deque<std::pair<dji_serial_bridge::msg::SimFrameMetadata, SteadyTime>> metadata_;
+  rclcpp::Publisher<dji_serial_bridge::msg::SimFrameAck>::SharedPtr ack_pub_;
+  rclcpp::Subscription<dji_serial_bridge::msg::SimFrameMetadata>::SharedPtr metadata_sub_;
+  rclcpp::TimerBase::SharedPtr coord_timer_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_guard_;
   int serial_fd_{-1};
   uint8_t tx_seq_{0};
   std::mutex write_mutex_;

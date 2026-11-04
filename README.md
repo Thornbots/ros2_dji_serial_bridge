@@ -231,3 +231,28 @@ The health test injects valid and corrupt frames, checks exact counters and
 throttled logs, and verifies health recovery and stalls on `/diagnostics`. The parser fixtures preserve the
 former Python diagnostic's bytes and printed error lines. No hardware or
 running ROS graph is needed for these unit tests.
+
+### Simulation capture metadata
+
+The bridge offers an optional coordination interface for simulator PTY input.
+Set `sim_frame_metadata:=true` together with `use_sim_time:=true` and
+`enforce_crc:=true`; the default is disabled. Publish reliable
+`~/sim_frame_metadata` (`SimFrameMetadata`) in serial-frame order, with a
+nonzero, strictly increasing session identity, the capture time of the state
+encoded in `header.stamp`, and the entire original UART frame including CRCs.
+The bridge matches complete CRC-valid frames and metadata in order, independent
+of which arrives first. It publishes the translated message with that capture
+stamp, then emits reliable `~/sim_frame_ack` (`SimFrameAck`): `published=true`
+means the ROS publish call returned, not that a subscriber received it. The
+ack header is the ROS time at result emission, and its identity matches the
+metadata. This interface does not change physical UART bytes.
+
+Both pending queues hold at most 32 frames. A mismatch, unsupported frame,
+invalid or out-of-order metadata, overflow, or unmatched item after
+`sim_frame_timeout_ms` wall milliseconds (default 1000) permanently fails the
+session until bridge restart. A failure ack has `published=false`, a reason,
+and the metadata identity when known (zero when unknown); the serial-link
+diagnostic also reports ERROR. No further frames are published in that
+session. The timeout uses wall time even when simulation is paused. Producers
+must detect missing acknowledgments too, since reliable ROS delivery does not
+prove a subscriber was present. Simulator integration is still pending.

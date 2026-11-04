@@ -48,6 +48,8 @@ struct Bridge
 {
   std::atomic<size_t> frames_rx_{0}, crc8_errors_{0}, crc16_errors_{0}, debug_msgs_pub_{0};
   bool enforce_crc_ = true;
+  bool coordinated_ = false;
+  void enqueue_frame(const std::vector<uint8_t> &, size_t) {}
   int64_t byte_wire_ns_ = 86805;
   Publisher publisher;
   Publisher * debug_pub_ = &publisher;

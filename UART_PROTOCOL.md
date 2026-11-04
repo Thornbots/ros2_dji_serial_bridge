@@ -253,6 +253,8 @@ frame: the read time of its last byte less the frame's wire time at `baudrate`
 (10 bits per byte). No MCB clock is on the wire, and the USB-serial latency
 before a read is not taken off. A frame whose send start would precede clock
 zero (bytes read before a simulated clock starts) is dropped with a warning.
+The optional simulation-only [capture metadata interface](README.md#simulation-capture-metadata)
+uses verified side-channel capture stamps instead; the UART frame is unchanged.
 
 ### POSE (id=2) — chassis pose and gimbal angles
 
