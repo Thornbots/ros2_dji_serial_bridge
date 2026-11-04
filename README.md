@@ -250,7 +250,10 @@ means the ROS publish call returned, not that a subscriber received it. The
 ack header is the observed delivery time, and its identity matches the
 metadata. `~/sim_clock_ready` first reports zero when the bridge's clock
 subscription matches a publisher, then reports each observed nonzero ROS time
-for simulator startup synchronization. This interface does not change physical UART bytes.
+for simulator startup synchronization. `~/sim_clock_observed` instead reports
+each clock sample actually received, including zero, with transient-local
+durability. A zero on `sim_clock_ready` alone is not evidence of receipt.
+This interface does not change physical UART bytes.
 
 Both pending queues hold at most 32 frames. A mismatch, unsupported frame,
 invalid or out-of-order metadata, overflow, or unmatched item after

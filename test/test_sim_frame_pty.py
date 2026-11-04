@@ -50,17 +50,21 @@ def exercise(mode):
                  '-p', 'sim_frame_timeout_ms:=500']
     process = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
     node = rclpy.create_node('sim_frame_pty_test')
-    acks, pings, ready = [], [], []
+    acks, pings, ready, observed = [], [], [], []
     pub = node.create_publisher(SimFrameMetadata, '/dji_serial_bridge/sim_frame_metadata', 32)
     clock_pub = node.create_publisher(Clock, '/clock', 10)
     ready_sub = node.create_subscription(
         Header, '/dji_serial_bridge/sim_clock_ready', ready.append,
         QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                    durability=DurabilityPolicy.TRANSIENT_LOCAL))
+    observed_sub = node.create_subscription(
+        Header, '/dji_serial_bridge/sim_clock_observed', observed.append,
+        QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                   durability=DurabilityPolicy.TRANSIENT_LOCAL))
     subs = [node.create_subscription(
         SimFrameAck, '/dji_serial_bridge/sim_frame_ack', acks.append, 32),
             node.create_subscription(Ping, '/dji_serial_bridge/ping_from_mcb', pings.append, 10),
-            ready_sub]
+            ready_sub, observed_sub]
 
     def wait(predicate, timeout=4):
         end = time.monotonic() + timeout
@@ -112,8 +116,12 @@ def exercise(mode):
             wait(lambda: clock_pub.get_subscription_count() >= 2 and
                  ready_sub.get_publisher_count() > 0)
             wait(lambda: ready and ready[-1].stamp.sec == 0)
+            assert not observed
+            clock_pub.publish(Clock())
+            wait(lambda: observed and observed[-1].stamp.sec == 0)
             clock_pub.publish(clock)
             wait(lambda: ready and ready[-1].stamp.sec == 43)
+            wait(lambda: observed and observed[-1].stamp.sec == 43)
             first, second = frame(1, 7), frame(2, 8)
             os.write(master, first)
             metadata(1, first)

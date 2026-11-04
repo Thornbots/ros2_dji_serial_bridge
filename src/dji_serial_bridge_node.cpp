@@ -214,6 +214,8 @@ public:
       ack_pub_ = create_publisher<dji_serial_bridge::msg::SimFrameAck>("~/sim_frame_ack", 32);
       ready_pub_ = create_publisher<std_msgs::msg::Header>(
         "~/sim_clock_ready", rclcpp::QoS(1).reliable().transient_local());
+      observed_clock_pub_ = create_publisher<std_msgs::msg::Header>(
+        "~/sim_clock_observed", rclcpp::QoS(1).reliable().transient_local());
       metadata_sub_ = create_subscription<dji_serial_bridge::msg::SimFrameMetadata>(
         "~/sim_frame_metadata", 32,
         [this](dji_serial_bridge::msg::SimFrameMetadata::SharedPtr msg) {
@@ -255,6 +257,9 @@ public:
               return;
             }
             coord_clock_ns_ = observed;
+            std_msgs::msg::Header observation;
+            observation.stamp = stamp;
+            observed_clock_pub_->publish(observation);
             if (observed > 0) {
               std_msgs::msg::Header ready;
               ready.stamp = stamp;
@@ -1106,6 +1111,7 @@ private:
   std::deque<std::pair<dji_serial_bridge::msg::SimFrameMetadata, SteadyTime>> metadata_;
   rclcpp::Publisher<dji_serial_bridge::msg::SimFrameAck>::SharedPtr ack_pub_;
   rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr ready_pub_;
+  rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr observed_clock_pub_;
   rclcpp::Subscription<dji_serial_bridge::msg::SimFrameMetadata>::SharedPtr metadata_sub_;
   rclcpp::Subscription<rosgraph_msgs::msg::Clock>::SharedPtr coord_clock_sub_;
   int64_t coord_clock_ns_{0};
