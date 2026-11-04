@@ -43,6 +43,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <diagnostic_updater/diagnostic_updater.hpp>
 #include <geometry_msgs/msg/point_stamped.hpp>
+#include <std_msgs/msg/header.hpp>
 
 #include "dji_serial_bridge/msg/sim_frame_metadata.hpp"
 #include "dji_serial_bridge/msg/sim_frame_ack.hpp"
@@ -210,6 +211,7 @@ public:
           return result;
         });
       ack_pub_ = create_publisher<dji_serial_bridge::msg::SimFrameAck>("~/sim_frame_ack", 32);
+      ready_pub_ = create_publisher<std_msgs::msg::Header>("~/sim_clock_ready", 10);
       metadata_sub_ = create_subscription<dji_serial_bridge::msg::SimFrameMetadata>(
         "~/sim_frame_metadata", 32,
         [this](dji_serial_bridge::msg::SimFrameMetadata::SharedPtr msg) {
@@ -217,6 +219,9 @@ public:
           if (coord_failed_) {return;}
           if (msg->frame_id == 0 || msg->frame_id <= last_identity_ ||
           msg->header.stamp.sec < 0 || msg->header.stamp.nanosec >= 1000000000u ||
+          msg->delivery_time.sec < 0 || msg->delivery_time.nanosec >= 1000000000u ||
+          rclcpp::Time(msg->delivery_time).nanoseconds() <
+          rclcpp::Time(msg->header.stamp).nanoseconds() ||
           msg->frame.size() < 9 || msg->frame.size() > 137 || metadata_.size() >= 32)
           {
             fail_coord(msg->frame_id, "invalid, out-of-order or overflowing metadata");
@@ -228,6 +233,13 @@ public:
         });
       coord_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
             std::lock_guard<std::mutex> lock(coord_mutex_);
+            if (coord_failed_) {return;}
+            if (now().nanoseconds() > 0) {
+              std_msgs::msg::Header ready;
+              ready.stamp = now();
+              ready_pub_->publish(ready);
+            }
+            match_frames();
             if (coord_failed_) {return;}
             const auto deadline = std::chrono::steady_clock::now() -
             std::chrono::milliseconds(timeout_ms_);
@@ -750,6 +762,13 @@ private:
         fail_coord(meta.frame_id, "frame mismatch or unsupported payload");
         return;
       }
+      const auto delivery = rclcpp::Time(meta.delivery_time, get_clock()->get_clock_type());
+      const auto current = now();
+      if (current < delivery) {return;}
+      if (current > delivery) {
+        fail_coord(meta.frame_id, "ROS clock overshot frame delivery");
+        return;
+      }
       dispatch_incoming(hdr.msgType, bytes.data() + sizeof(hdr), hdr.dataLength,
         rclcpp::Time(meta.header.stamp, get_clock()->get_clock_type()));
       dji_serial_bridge::msg::SimFrameAck ack;
@@ -1063,6 +1082,7 @@ private:
   std::deque<std::pair<std::vector<uint8_t>, SteadyTime>> frames_;
   std::deque<std::pair<dji_serial_bridge::msg::SimFrameMetadata, SteadyTime>> metadata_;
   rclcpp::Publisher<dji_serial_bridge::msg::SimFrameAck>::SharedPtr ack_pub_;
+  rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr ready_pub_;
   rclcpp::Subscription<dji_serial_bridge::msg::SimFrameMetadata>::SharedPtr metadata_sub_;
   rclcpp::TimerBase::SharedPtr coord_timer_;
   rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr parameter_guard_;

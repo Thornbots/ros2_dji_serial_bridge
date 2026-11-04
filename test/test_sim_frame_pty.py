@@ -22,6 +22,7 @@ import time
 
 from dji_serial_bridge.msg import Ping, SimFrameAck, SimFrameMetadata
 import rclpy
+from rosgraph_msgs.msg import Clock
 
 
 def crc(data, polynomial, value):
@@ -49,6 +50,7 @@ def exercise(mode):
     node = rclpy.create_node('sim_frame_pty_test')
     acks, pings = [], []
     pub = node.create_publisher(SimFrameMetadata, '/dji_serial_bridge/sim_frame_metadata', 32)
+    clock_pub = node.create_publisher(Clock, '/clock', 10)
     subs = [node.create_subscription(
         SimFrameAck, '/dji_serial_bridge/sim_frame_ack', acks.append, 32),
             node.create_subscription(Ping, '/dji_serial_bridge/ping_from_mcb', pings.append, 10)]
@@ -67,6 +69,7 @@ def exercise(mode):
         msg.frame_id = identity
         msg.header.stamp.sec = 42
         msg.header.stamp.nanosec = 123
+        msg.delivery_time.sec = 43
         msg.frame = data
         pub.publish(msg)
 
@@ -84,6 +87,12 @@ def exercise(mode):
             os.write(master, first + second)
             time.sleep(0.05)
             metadata(2, second)
+            for _ in range(10):
+                rclpy.spin_once(node, timeout_sec=0.01)
+            assert not acks and not pings
+            clock = Clock()
+            clock.clock.sec = 43
+            clock_pub.publish(clock)
             wait(lambda: len(acks) == 2 and len(pings) == 2)
             assert [a.frame_id for a in acks] == [1, 2]
             assert all(a.published and not a.reason for a in acks)
