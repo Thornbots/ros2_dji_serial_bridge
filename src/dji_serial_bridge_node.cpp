@@ -551,9 +551,16 @@ private:
 
     if (msg_type == McbMsgType::CV_TARGET || msg_type == McbMsgType::TARGET_STATE) {
       // No software TX backlog may sit ahead of a stamped wire decision.
-      int pending = 0;
-      bool ok = ::ioctl(serial_fd_, TIOCOUTQ, &pending) == 0 && pending == 0 &&
-        decision_stamp != nullptr;
+      // Coordinated simulation models that backlog on the simulation clock
+      // (the relay drains the PTY only at its own steps, so TIOCOUTQ would
+      // reflect scheduling, not the 8N1 wire).
+      bool ok = decision_stamp != nullptr;
+      if (ok && coordinated_) {
+        ok = now().nanoseconds() >= tx_wire_free_ns_;
+      } else if (ok) {
+        int pending = 0;
+        ok = ::ioctl(serial_fd_, TIOCOUTQ, &pending) == 0 && pending == 0;
+      }
       if (ok) {
         // One clock read serves the freshness gate and both wire ages.
         const int64_t now_ns = now().nanoseconds();
@@ -590,6 +597,11 @@ private:
                          "send_frame: short write for msg_type=%u (%zd/%zu): %s",
                          static_cast<unsigned>(msg_type), written, frame.size(), strerror(errno));
       return false;
+    }
+    if (coordinated_) {
+      // The wire is busy until this frame's last byte has been sent.
+      tx_wire_free_ns_ = std::max(tx_wire_free_ns_, now().nanoseconds()) +
+        static_cast<int64_t>(frame.size()) * byte_wire_ns_;
     }
     RCLCPP_DEBUG(get_logger(),
                      "send_frame: msg_type=%u  seq=%u  payload=%u B  frame=%zu B  OK",
@@ -1159,6 +1171,7 @@ private:
   uint64_t last_identity_{0};
   std::deque<std::pair<std::vector<uint8_t>, SteadyTime>> frames_;
   std::deque<std::pair<dji_serial_bridge::msg::SimFrameMetadata, SteadyTime>> metadata_;
+  int64_t tx_wire_free_ns_ = 0;  // guarded by write_mutex_; coordinated simulation only
   rclcpp::Publisher<dji_serial_bridge::msg::SimFrameAck>::SharedPtr ack_pub_;
   rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr ready_pub_;
   rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr observed_clock_pub_;

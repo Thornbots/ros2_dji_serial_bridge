@@ -97,6 +97,9 @@ public:
   std::atomic<uint64_t> target_state_msgs_tx_{0};
   int serial_fd_{-1};
   uint8_t tx_seq_{0};
+  bool coordinated_{false};
+  int64_t byte_wire_ns_{86805};  // 115200 baud, 8N1
+  int64_t tx_wire_free_ns_{0};
   struct Now {int64_t ns; int64_t nanoseconds() const {return ns;}};
   Now now() {++clock_reads; return {clock_ns.load()};}
 
@@ -305,8 +308,43 @@ static void test_target_state()
   assert(writes == 0);
 }
 
+// Coordinated simulation: the modeled wire, not the PTY queue, gates a decision.
+static void test_coordinated_wire()
+{
+  Bridge bridge;
+  bridge.coordinated_ = true;
+  auto state = std::make_shared<dji_serial_bridge::msg::TargetState>();
+  auto idle = std::make_shared<dji_serial_bridge::msg::CVTarget>();
+  state->header.stamp = idle->header.stamp = {1, 50000000U};
+  state->detection_stamp = {1, 20000000U};
+  bridge.clock_ns = 1100000000LL;
+  reset();
+  pending_bytes = 500;  // a stale PTY backlog is irrelevant to the sim wire
+  bridge.target_state_callback(state);
+  assert(writes == 1 && emitted.size() == 89);
+  const int64_t busy_until = 1100000000LL + 89 * bridge.byte_wire_ns_;
+  assert(bridge.tx_wire_free_ns_ == busy_until);
+  // A second decision while the first is still on the wire drops, then sends
+  // at the first sim time the wire is free.
+  bridge.clock_ns = busy_until - 1;
+  bridge.cv_target_callback(idle);
+  assert(writes == 1);
+  bridge.clock_ns = busy_until;
+  bridge.cv_target_callback(idle);
+  assert(writes == 2 && emitted.size() == 22);
+  assert(bridge.tx_wire_free_ns_ == busy_until + 22 * bridge.byte_wire_ns_);
+  // A failed write leaves the wire free.
+  const int64_t free_at = bridge.tx_wire_free_ns_;
+  bridge.clock_ns = free_at;
+  reset();
+  write_blocked = true;
+  bridge.cv_target_callback(idle);
+  assert(bridge.tx_wire_free_ns_ == free_at);
+}
+
 int main()
 {
+  test_coordinated_wire();
   using dji_bridge::cv_target_is_fresh;
   assert(cv_target_is_fresh(1, 0, 1000000000LL));
   assert(cv_target_is_fresh(1, 0, 1199999999LL));
