@@ -246,6 +246,10 @@ subscription matches a publisher, then reports each observed nonzero ROS time
 for simulator startup synchronization. `~/sim_clock_observed` instead reports
 each clock sample actually received, including zero, with transient-local
 durability. A zero on `sim_clock_ready` alone is not evidence of receipt.
+In this mode the Jetson-to-MCB busy gate for CV_TARGET and TARGET_STATE replaces
+`TIOCOUTQ` with the sim-clock wire: a decision drops while an earlier frame's
+bytes (frame size x 10 / `baudrate`) are still on the wire, because the simulator
+drains the PTY only at its own steps. The robot path is unchanged.
 This interface does not change physical UART bytes.
 
 Both pending queues hold at most 32 frames. A mismatch, unsupported frame,
