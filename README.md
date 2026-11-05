@@ -92,10 +92,9 @@ Paths below are under `MCB-project/src/` in MCBV3.
 - The UART receiver has one mailbox slot: a later frame can overwrite an
   unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
   with CV_TARGET traffic before relying on corrections while moving.
-- The normal sentry switch schedules the fixed-waypoint
-  `SimpleAutoDriveCommand`, not the NAV_GOAL reader `AutoDriveCommand`
-  (`robots/sentry/SentryControl.hpp`). Sim's `mcb.launch.py drive:=auto`
-  selects that reader explicitly; the match stages use scripted sim routes.
+- The normal sentry switch schedules the NAV_GOAL reader `AutoDriveCommand`
+  (`robots/sentry/SentryControl.hpp`); the firmware keeps no route.
+  `thornbots_nav`'s `waypoint_nav` publishes the goals.
 - Outgoing UART sequence numbers remain zero (`UARTCommunication.cpp`).
   Chassis yaw is absent from POSE, so the bridge publishes zero for its
   proposed chassis-yaw fields.
