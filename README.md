@@ -32,6 +32,8 @@ save if it also removes Jetson power.
 Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
 firmware and ROS together; physical acceptance is tracked in the [ROADMAP](../docs/ROADMAP.md#later-needs-a-robot).
+The earlier asks against `position-based-cv` `0885a69` describe old firmware,
+not the current integration.
 
 The MCB plans aim and fire from `TARGET_STATE` and takes idle looks from the
 13-byte `CV_TARGET`; hit-turn permission and the firmware-side layout are in
@@ -62,27 +64,30 @@ Paths below are under `MCB-project/src/` in MCBV3.
   [contracts](UART_PROTOCOL.md#cv_target-id1--idle-look-point); the MCB owns
   planning, fire lock, gates and shot timing
   ([MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry)).
-  The firmware pin and sim must move to the matching MCBV3 commit with this
-  change; the 053285f review above predates both payloads.
-- Bit 2 (`turn_to_hit`) of `CV_TARGET` permits a 500 ms hit turn only while no
-  target state is held; clearing it cancels that turn.
-- POSE position, velocity and head yaw use the raw aim frame
-  ([message types](UART_PROTOCOL.md#message-types)). `mcb_x_right` is removed.
-  `odom_status` reports `ODOM_PODS` or a stale-Pico `ODOM_I2C_DEAD`
-  ([codes](UART_PROTOCOL.md#pose-id2--chassis-pose-and-gimbal-angles)).
-- REF_SYS hit angles follow [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
+- Bit 1 of either message permits firmware patrol when no aim is held; bit 2
+  (`turn_to_hit`) of `CV_TARGET` permits a 500 ms hit turn only while no
+  target state is held. Clearing it cancels that turn.
+- POSE position, velocity and head yaw use the
+  raw aim frame described in
+  [UART_PROTOCOL message types](UART_PROTOCOL.md#message-types).
+  `mcb_x_right` is removed.
+  `JetsonSubsystem.cpp` sends nine POSE frames then one REF_SYS on its 10 ms
+  timer (nominally 90 Hz and 10 Hz). `odom_status` reports `ODOM_PODS` or a
+  stale-Pico `ODOM_I2C_DEAD` ([codes](UART_PROTOCOL.md#message-types)).
+- REF_SYS hit angles use radians relative to the current chassis heading,
+  positive CCW, as specified in [UART_PROTOCOL](UART_PROTOCOL.md#ref_sys-id3--referee-system-status).
   `util/HitTracker.hpp` keeps IMU yaw in radians; firmware and hosted UART
   tests cover nonzero head and chassis yaw. It retains the latest world hit
   bearing until a complete REF_SYS write succeeds, independently of the
-  one-cycle event used by auto-aim/UI. Physical hit direction remains
-  unvalidated.
+  one-cycle event used by auto-aim/UI. A report uses the current chassis
+  heading; the next report carries 123 unless another hit occurred.
+  Physical hit direction remains unvalidated.
 - The UART receiver has one mailbox slot: a later frame can overwrite an
   unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
   with CV_TARGET and TARGET_STATE traffic before relying on corrections while moving.
-- The normal sentry switch schedules the fixed-waypoint
-  `SimpleAutoDriveCommand`, not the NAV_GOAL reader `AutoDriveCommand`
-  (`robots/sentry/SentryControl.hpp`). Sim's `mcb.launch.py drive:=auto`
-  selects that reader explicitly; the match stages use scripted sim routes.
+- The normal sentry switch schedules the NAV_GOAL reader `AutoDriveCommand`
+  (`robots/sentry/SentryControl.hpp`); the firmware keeps no route.
+  `thornbots_nav`'s `waypoint_nav` publishes the goals.
 - Outgoing UART sequence numbers remain zero (`UARTCommunication.cpp`).
   Chassis yaw is absent from POSE, so the bridge publishes zero for its
   proposed chassis-yaw fields.
@@ -90,16 +95,20 @@ Paths below are under `MCB-project/src/` in MCBV3.
 ### Aim and navigation frames
 
 POSE, CV_TARGET and TARGET_STATE use continuous raw aim odometry; NAV_GOAL and RELOCALIZE
-use separately corrected navigation odometry. The exact frame roles are owned by
+use separately corrected navigation odometry. RELOCALIZE updates only the
+navigation offset and does not reanchor raw aim. The exact frame roles are
+owned by
 [UART_PROTOCOL](UART_PROTOCOL.md#message-types). Deploy the matching
 firmware and ROS stack together; the unchanged payload length cannot detect
-an axis mismatch. The physical team's start pose remains unmeasured on the field.
+an axis mismatch. The physical team's start pose remains
+unmeasured on the field.
 
 Jetson camera/target/aim transforms use raw MCB POSE, independently of the
-EKF and map localization, so navigation corrections cannot move gimbal aim.
-Raw drift and UART/sample timing still affect aim. The single-slot mailbox
-can lose a RELOCALIZE arriving alongside TARGET_STATE or CV_TARGET; measure that and the
-UART/read delays on hardware.
+EKF and map localization. RELOCALIZE updates only the MCB navigation offset;
+gimbal aim subtracts raw odometry. Raw drift and UART/sample timing still
+affect aim, but navigation corrections cannot move it. The current
+1 ms mailbox can lose a RELOCALIZE arriving alongside TARGET_STATE or
+CV_TARGET; measure that and the UART/read delays on hardware.
 
 `root` is heading-fixed and gimbal yaw is world yaw, so the existing aim does
 not require chassis yaw. The [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw)
@@ -126,12 +135,13 @@ Both expire at the bridge write boundary; see
 requirements, rejected stamps (including `detection_stamp`) and serial queuing
 limits.
 
-`~/debug` publishes the firmware's opaque `JetsonSubsystem::sendDebug` bytes as
-`DebugBlob` with a send-start stamp and empty frame ID, untouched; decode
-offline against the producing firmware. The startup recorder includes it in
-normal and match bags. Payload limits, loss behavior and link budget:
-[DEBUG contract](UART_PROTOCOL.md#debug-id6--opaque-firmware-debug). No debug
-producer is enabled in production firmware.
+Firmware developers can queue opaque byte blobs with `JetsonSubsystem::sendDebug`.
+`~/debug` publishes `DebugBlob` with a send-start stamp and empty frame ID;
+the bridge leaves its bytes untouched. The startup recorder includes it in
+normal and match bags. Decode offline against the producing firmware.
+See the [DEBUG contract](UART_PROTOCOL.md#debug-id6--opaque-firmware-debug) for
+payload limits, loss behavior and link budget. No debug producer is enabled
+in production firmware.
 
 ## Parameters
 

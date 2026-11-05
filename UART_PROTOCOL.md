@@ -387,8 +387,9 @@ transmission-complete flag, including the final shift-register byte. See the fir
 rules. RX polling remains independent and runs before TX admission: debug
 must not affect CV_TARGET or RELOCALIZE reception or their mailboxes.
 
-Bag recording of `/dji_serial_bridge/debug` is described in the
-[bridge README](README.md#topics).
+The startup per-run recorder includes `/dji_serial_bridge/debug` in normal
+and match runs whenever bag recording is enabled. No content is enabled by
+default; individual firmware developers choose what and when to send.
 
 ---
 
