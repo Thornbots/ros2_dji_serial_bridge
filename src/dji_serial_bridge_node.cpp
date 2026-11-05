@@ -244,28 +244,28 @@ public:
         };
       coord_clock_sub_ = create_subscription<rosgraph_msgs::msg::Clock>(
         "/clock", rclcpp::ClockQoS(), [this](rosgraph_msgs::msg::Clock::ConstSharedPtr msg) {
-            std::lock_guard<std::mutex> lock(coord_mutex_);
-            if (coord_failed_) {return;}
-            const auto & stamp = msg->clock;
-            if (stamp.sec < 0 || stamp.nanosec >= 1000000000u) {
-              fail_coord(0, "invalid ROS clock");
-              return;
-            }
-            const auto observed = rclcpp::Time(stamp, RCL_ROS_TIME).nanoseconds();
-            if (observed < coord_clock_ns_) {
-              fail_coord(0, "ROS clock moved backwards");
-              return;
-            }
-            coord_clock_ns_ = observed;
-            std_msgs::msg::Header observation;
-            observation.stamp = stamp;
-            observed_clock_pub_->publish(observation);
-            if (observed > 0) {
-              std_msgs::msg::Header ready;
-              ready.stamp = stamp;
-              ready_pub_->publish(ready);
-            }
-            match_frames();
+          std::lock_guard<std::mutex> lock(coord_mutex_);
+          if (coord_failed_) {return;}
+          const auto & stamp = msg->clock;
+          if (stamp.sec < 0 || stamp.nanosec >= 1000000000u) {
+            fail_coord(0, "invalid ROS clock");
+            return;
+          }
+          const auto observed = rclcpp::Time(stamp, RCL_ROS_TIME).nanoseconds();
+          if (observed < coord_clock_ns_) {
+            fail_coord(0, "ROS clock moved backwards");
+            return;
+          }
+          coord_clock_ns_ = observed;
+          std_msgs::msg::Header observation;
+          observation.stamp = stamp;
+          observed_clock_pub_->publish(observation);
+          if (observed > 0) {
+            std_msgs::msg::Header ready;
+            ready.stamp = stamp;
+            ready_pub_->publish(ready);
+          }
+          match_frames();
         }, clock_options);
       coord_timer_ = create_wall_timer(std::chrono::milliseconds(10), [this]() {
             std::lock_guard<std::mutex> lock(coord_mutex_);
