@@ -49,6 +49,7 @@
 #include "dji_serial_bridge/msg/sim_frame_metadata.hpp"
 #include "dji_serial_bridge/msg/sim_frame_ack.hpp"
 #include "dji_serial_bridge/msg/cv_target.hpp"
+#include "dji_serial_bridge/msg/target_state.hpp"
 #include "dji_serial_bridge/msg/ping.hpp"
 #include "dji_serial_bridge/msg/debug_blob.hpp"
 #include "dji_serial_bridge/msg/robot_pose.hpp"
@@ -57,6 +58,7 @@
 #include "dji_serial_bridge/dji_protocol.hpp"
 #include "dji_serial_bridge/crc_dji.hpp"
 #include "dji_serial_bridge/cv_target_freshness.hpp"
+#include "dji_serial_bridge/target_state_wire.hpp"
 
 #ifdef __APPLE__
 // macOS's termios.h stops at B230400, and its speed_t is the rate itself.
@@ -184,7 +186,7 @@ public:
                     "Serial port configured: %ld baud, 8N1, no flow control, raw mode",
                     baudrate);
     // Keep O_NONBLOCK: a validated decision must never wait in a blocking write.
-    // poll() handles receive readiness; see UART_PROTOCOL.md#cv-decision-freshness.
+    // poll() handles receive readiness; see UART_PROTOCOL.md#jetson--mcb-freshness.
 
     // ── Publishers  (MCB → Jetson) ────────────────────────────────────────
     pose_pub_ = create_publisher<dji_serial_bridge::msg::RobotPose>(
@@ -291,6 +293,10 @@ public:
             "~/cv_target", rclcpp::SensorDataQoS(),
             std::bind(&DjiSerialBridge::cv_target_callback, this, _1));
 
+    target_state_sub_ = create_subscription<dji_serial_bridge::msg::TargetState>(
+            "~/target_state", rclcpp::SensorDataQoS(),
+            std::bind(&DjiSerialBridge::target_state_callback, this, _1));
+
     relocalize_sub_ = create_subscription<geometry_msgs::msg::PointStamped>(
             "~/relocalize", 10,
             std::bind(&DjiSerialBridge::relocalize_callback, this, _1));
@@ -300,7 +306,8 @@ public:
             std::bind(&DjiSerialBridge::ping_callback, this, _1));
 
     RCLCPP_INFO(get_logger(),
-                    "Subscribers ready: ~/nav_goal  ~/cv_target  ~/relocalize  ~/ping_to_mcb");
+                    "Subscribers ready: ~/nav_goal  ~/cv_target  ~/target_state  ~/relocalize  "
+                    "~/ping_to_mcb");
 
     // ── Diagnostic timer ──────────────────────────────────────────────────
     // Fires every diag_interval_s seconds and prints a stats summary so you
@@ -359,6 +366,7 @@ private:
   std::atomic<uint64_t> ref_sys_msgs_pub_{0};
   std::atomic<uint64_t> nav_goal_msgs_tx_{0};
   std::atomic<uint64_t> cv_target_msgs_tx_{0};
+  std::atomic<uint64_t> target_state_msgs_tx_{0};
   std::atomic<uint64_t> relocalize_msgs_tx_{0};
   std::atomic<uint64_t> ping_msgs_pub_{0};
   std::atomic<uint64_t> ping_msgs_tx_{0};
@@ -407,6 +415,7 @@ private:
     status.add("ping_msgs_pub", ping_msgs_pub_.load());
     status.add("nav_goal_msgs_tx", nav_goal_msgs_tx_.load());
     status.add("cv_target_msgs_tx", cv_target_msgs_tx_.load());
+    status.add("target_state_msgs_tx", target_state_msgs_tx_.load());
     status.add("relocalize_msgs_tx", relocalize_msgs_tx_.load());
     status.add("ping_msgs_tx", ping_msgs_tx_.load());
     status.add("silent_polls", silent_polls_.load());
@@ -426,6 +435,7 @@ private:
     const uint64_t ref = ref_sys_msgs_pub_.load(std::memory_order_relaxed);
     const uint64_t ng = nav_goal_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t cv = cv_target_msgs_tx_.load(std::memory_order_relaxed);
+    const uint64_t ts = target_state_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t rl = relocalize_msgs_tx_.load(std::memory_order_relaxed);
     const uint64_t ppub = ping_msgs_pub_.load(std::memory_order_relaxed);
     const uint64_t ptx = ping_msgs_tx_.load(std::memory_order_relaxed);
@@ -440,9 +450,10 @@ private:
                         "     silent_polls=%lu  (each poll_ms timeout = no data arriving)\n"
                         "  RX  bytes=0  frames=0  crc8_err=0  crc16_err=0\n"
                         "  PUB pose=0  ref_sys=0  ping=0  debug=0\n"
-                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
+                        "  TX  nav_goal=%lu  cv_target=%lu  target_state=%lu  relocalize=%lu\n"
+                        "      ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        sil, ng, cv, rl, ptx);
+                        sil, ng, cv, ts, rl, ptx);
     } else if (frx == 0 && brx > 0) {
       RCLCPP_WARN(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
@@ -451,17 +462,19 @@ private:
                         "     crc8_err=%lu  crc16_err=%lu\n"
                         "  RX  bytes=%lu  frames=0\n"
                         "  PUB pose=0  ref_sys=0  ping=0  debug=0\n"
-                        "  TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
+                        "  TX  nav_goal=%lu  cv_target=%lu  target_state=%lu  relocalize=%lu\n"
+                        "      ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, c8, c16, brx, ng, cv, rl, ptx);
+                        brx, c8, c16, brx, ng, cv, ts, rl, ptx);
     } else {
       RCLCPP_INFO(get_logger(),
                         "── DIAG ─────────────────────────────────────────────────\n"
                         "  ✓ RX  bytes=%lu  frames=%lu  crc8_err=%lu  crc16_err=%lu\n"
                         "  ✓ PUB pose=%lu  ref_sys=%lu  ping=%lu  debug=%lu\n"
-                        "    TX  nav_goal=%lu  cv_target=%lu  relocalize=%lu  ping=%lu\n"
+                        "    TX  nav_goal=%lu  cv_target=%lu  target_state=%lu  relocalize=%lu\n"
+                        "        ping=%lu\n"
                         "─────────────────────────────────────────────────────────",
-                        brx, frx, c8, c16, pose, ref, ppub, debug, ng, cv, rl, ptx);
+                        brx, frx, c8, c16, pose, ref, ppub, debug, ng, cv, ts, rl, ptx);
     }
   }
 
@@ -513,7 +526,8 @@ private:
     McbMsgType msg_type,
     const uint8_t *payload,
     uint16_t payload_len,
-    const builtin_interfaces::msg::Time * decision_stamp = nullptr)
+    const builtin_interfaces::msg::Time * decision_stamp = nullptr,
+    const builtin_interfaces::msg::Time * detection_stamp = nullptr)
   {
     std::lock_guard<std::mutex> lock(write_mutex_);
     FrameHeader hdr{};
@@ -535,15 +549,38 @@ private:
     frame.push_back(static_cast<uint8_t>(crc16 & 0xFF));
     frame.push_back(static_cast<uint8_t>((crc16 >> 8) & 0xFF));
 
-    if (msg_type == McbMsgType::CV_TARGET) {
+    if (msg_type == McbMsgType::CV_TARGET || msg_type == McbMsgType::TARGET_STATE) {
+      // No software TX backlog may sit ahead of a stamped wire decision.
       int pending = 0;
-      // No software TX backlog may sit ahead of this unstamped wire decision.
-      if (::ioctl(serial_fd_, TIOCOUTQ, &pending) != 0 || pending != 0 ||
-        decision_stamp == nullptr || !dji_bridge::cv_target_is_fresh(
-          decision_stamp->sec, decision_stamp->nanosec, now().nanoseconds()))
-      {
+      bool ok = ::ioctl(serial_fd_, TIOCOUTQ, &pending) == 0 && pending == 0 &&
+        decision_stamp != nullptr;
+      if (ok) {
+        // One clock read serves the freshness gate and both wire ages.
+        const int64_t now_ns = now().nanoseconds();
+        int64_t state_age_ns = 0;
+        int64_t detection_age_ns = 0;
+        ok = dji_bridge::stamp_age_ns(
+          decision_stamp->sec, decision_stamp->nanosec, now_ns, &state_age_ns) &&
+          state_age_ns < 200000000LL;
+        if (ok && msg_type == McbMsgType::TARGET_STATE) {
+          ok = detection_stamp != nullptr && payload_len == sizeof(TargetStatePayload) &&
+            dji_bridge::stamp_age_ns(
+            detection_stamp->sec, detection_stamp->nanosec, now_ns, &detection_age_ns);
+          if (ok) {
+            const uint16_t ages[2] = {
+              dji_bridge::age_ms_saturated(state_age_ns),
+              dji_bridge::age_ms_saturated(detection_age_ns)};
+            std::memcpy(frame.data() + sizeof(FrameHeader) +
+              offsetof(TargetStatePayload, state_age_ms), ages, sizeof(ages));
+            crc16 = calculateCRC16(frame.data(), frame.size() - 2u);
+            frame[frame.size() - 2u] = static_cast<uint8_t>(crc16 & 0xFF);
+            frame[frame.size() - 1u] = static_cast<uint8_t>((crc16 >> 8) & 0xFF);
+          }
+        }
+      }
+      if (!ok) {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 1000,
-          "Dropping expired/invalid CV_TARGET or busy/unavailable serial TX queue");
+          "Dropping expired/invalid CV_TARGET/TARGET_STATE or busy/unavailable serial TX queue");
         return false;
       }
     }
@@ -1031,9 +1068,7 @@ private:
     p.x = msg->x;
     p.y = msg->y;
     p.z = msg->z;
-    p.delay_ms = msg->delay_ms;
-    p.flags = (msg->fire ? 0x01 : 0x00) | (msg->type_c_based_patrol ? 0x02 : 0x00) |
-      (msg->turn_to_hit ? 0x04 : 0x00) | (msg->patrol ? 0x08 : 0x00);
+    p.flags = (msg->type_c_based_patrol ? 0x02 : 0x00) | (msg->turn_to_hit ? 0x04 : 0x00);
 
     const bool ok = send_frame(McbMsgType::CV_TARGET,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p),
@@ -1043,6 +1078,21 @@ private:
     } else {
       RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
                                   "Failed to send CV_TARGET");
+    }
+  }
+
+  void target_state_callback(const dji_serial_bridge::msg::TargetState::SharedPtr msg)
+  {
+    const TargetStatePayload p = dji_bridge::pack_target_state(*msg);
+
+    const bool ok = send_frame(McbMsgType::TARGET_STATE,
+                                   reinterpret_cast<const uint8_t *>(&p), sizeof(p),
+      &msg->header.stamp, &msg->detection_stamp);
+    if (ok) {
+      target_state_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
+    } else {
+      RCLCPP_ERROR_THROTTLE(get_logger(), *get_clock(), 1000,
+                                  "Failed to send TARGET_STATE");
     }
   }
 
@@ -1134,6 +1184,7 @@ private:
 
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr nav_goal_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::CVTarget>::SharedPtr cv_target_sub_;
+  rclcpp::Subscription<dji_serial_bridge::msg::TargetState>::SharedPtr target_state_sub_;
   rclcpp::Subscription<geometry_msgs::msg::PointStamped>::SharedPtr relocalize_sub_;
   rclcpp::Subscription<dji_serial_bridge::msg::Ping>::SharedPtr ping_sub_;
 };

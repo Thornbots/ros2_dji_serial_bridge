@@ -26,7 +26,10 @@ class CvTargetBoundaryTest(unittest.TestCase):
     def test_production_methods(self):
         source = (ROOT / 'src/dji_serial_bridge_node.cpp').read_text()
         methods = []
-        for signature in ['  bool send_frame(', '  void cv_target_callback(']:
+        for signature in [
+            '  bool send_frame(', '  void cv_target_callback(',
+            '  void target_state_callback(',
+        ]:
             start = source.index(signature)
             end = source.index('\n  }', start) + len('\n  }')
             methods.append(source[start:end])

@@ -35,15 +35,16 @@ retransmission, acknowledgement or flow control in either direction.
 | ID | Name         | Direction     | Payload struct      | Bytes | ROS topic      | ROS type                             | Rate          |
 |----|--------------|---------------|---------------------|-------|----------------|--------------------------------------|---------------|
 | 0  | `NAV_GOAL`   | Jetson → MCB  | `NavGoalPayload`    | 8     | `~/nav_goal`   | `geometry_msgs/msg/PointStamped`     | on publish    |
-| 1  | `CV_TARGET`  | Jetson → MCB  | `CvTargetPayload`   | 15    | `~/cv_target`  | `dji_serial_bridge/msg/CVTarget`     | on publish    |
+| 1  | `CV_TARGET`  | Jetson → MCB  | `CvTargetPayload`   | 13    | `~/cv_target`  | `dji_serial_bridge/msg/CVTarget`     | on publish, idle only |
 | 2  | `POSE`       | MCB → Jetson  | `PosePayload`       | 25    | `~/pose`       | `dji_serial_bridge/msg/RobotPose`    | 90 Hz         |
 | 3  | `REF_SYS`    | MCB → Jetson  | `RefSysPayload`     | 11    | `~/ref_sys`    | `dji_serial_bridge/msg/RefSysStatus` | 10 Hz         |
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 | 6 | `DEBUG` | MCB → Jetson | opaque bytes | 0–128 | `~/debug` | `dji_serial_bridge/msg/DebugBlob` | caller-driven, best effort |
+| 7  | `TARGET_STATE` | Jetson → MCB | `TargetStatePayload` | 80 | `~/target_state` | `dji_serial_bridge/msg/TargetState` | per tracker update |
 
 Each message is named after its topic, and its payload fields after the ROS
-fields they carry. IDs 0-6 match `enum UartMessage` in the firmware's
+fields they carry. IDs 0-7 match `enum UartMessage` in the firmware's
 `JetsonSubsystem.hpp`. Topics are in the node's private namespace:
 `~/nav_goal` is `/dji_serial_bridge/nav_goal` unless remapped. The firmware
 sends nine POSE then one REF_SYS on one 10 ms timer.
@@ -86,7 +87,7 @@ An inbound frame with any other `msgType` is counted, logged at WARN, dropped.
 
 Transmitted from the subscriber callback: one ROS message in, one frame out.
 No timer, no retransmission; the wire rate is the publisher's rate. Fields are
-copied without clamping; CV_TARGET has the freshness gate below.
+copied without clamping; CV_TARGET and TARGET_STATE have the freshness gate below.
 
 ### MCB receive
 
@@ -110,11 +111,11 @@ header are discarded.
 
 A goal in the corrected navigation frame, metres, consumed by its autonomous
 drive controller only after its first RELOCALIZE. No publisher in this workspace: `mcb_relay` wires up
-`~/cv_target` and `~/relocalize` only.
+`~/cv_target`, `~/target_state` and `~/relocalize` only.
 
-### CV_TARGET (id=1) — aim point and fire decision
+### CV_TARGET (id=1) — idle look point
 
-15-byte payload, 24-byte frame. Subscribed on `~/cv_target`
+13-byte payload, 22-byte frame. Subscribed on `~/cv_target`
 (`dji_serial_bridge/msg/CVTarget`, SensorDataQoS, best-effort).
 
 | Off | Size | Type    | Field        | From                          |
@@ -122,90 +123,85 @@ drive controller only after its first RELOCALIZE. No publisher in this workspace
 | 0   | 4    | float32 | `x`          | `CVTarget.x`                  |
 | 4   | 4    | float32 | `y`          | `CVTarget.y`                  |
 | 8   | 4    | float32 | `z`          | `CVTarget.z`                  |
-| 12  | 2    | uint16  | `delay_ms`   | `CVTarget.delay_ms`           |
-| 14  | 1    | uint8   | `flags`      | packed booleans, below        |
+| 12  | 1    | uint8   | `flags`      | packed booleans, below        |
 
 | Bit | `CVTarget` field      | Set means                                        |
 |-----|-----------------------|--------------------------------------------------|
-| 0   | `fire`                | request this aim point to exit `delay_ms` after receipt |
 | 1   | `type_c_based_patrol` | MCB permission to patrol on its own; clear stops it |
 | 2   | `turn_to_hit`         | MCB permission to turn toward where it got hit  |
-| 3   | `patrol`              | idle/non-target aim point |
 
-Bits 4-7 are reserved, sent as 0. Bit 3 is informational and currently
-ignored by firmware; it does not gate bit 0 or otherwise change firing. The
-`patrol` field name and bit position are unchanged: it now marks an idle,
-non-target point, not a Jetson sweep patrol. Bit 1 remains separate permission
-for firmware patrol after aim expiry. The bridge packs these booleans without
-interpreting them, as it unpacks REF_SYS's.
+Bits 0 and 3-7 are reserved, sent as 0. The bridge packs these booleans
+without interpreting them, as it unpacks REF_SYS's.
 
-Bits 1 and 2 reach the MCB with every frame. The Jetson clears bit 2 while
-holding a target estimate, including a coasting/predicted track during brief
-occlusion and an unconverged estimate. Every idle/non-target frame sets bit 2
-(`turn_to_hit`) and bit 3 (`patrol`), with `fire` clear. There is no cooldown;
-the next target frame clears bit 2 and cancels any firmware hit turn.
-
-The Jetson decides aim and fire itself. It requests fire only while the newest
-detection is at most 0.15 s old (`fire_max_state_age_s`); this is a necessary
-freshness condition, not permission to bypass other firing gates. It continues
-aiming without firing through a brief detection gap until the 0.5 s target
-timeout (`target_timeout_s`). Prediction does not refresh detection age.
-
-There is no Jetson patrol. After the target timeout, the Jetson keeps sending
-non-firing idle aim points instead of going silent, preserving hit-turn
-permission in the last frame's flags. Idle looks can hold the last enemy
-position, follow the gun after a firmware hit turn, check a lidar track or face
-the enemy starting zone; their selection belongs to `thornbots_pkg` (see the
+A non-target point the gimbal should look at: never a target and never a
+fire request (aiming and firing ride [TARGET_STATE](#target_state-id7--tracked-enemy-armor-model)).
+The Jetson sends idle points only while it holds no target state younger than
+its target timeout. Idle looks can hold the last enemy position, follow the gun
+after a firmware hit turn, check a lidar track or face the enemy starting zone;
+their selection belongs to `thornbots_pkg` (see the
 [lidar-guided aiming design](../docs/lidar-guided-aiming-2026-10-25.md#where-the-head-looks-with-no-camera-target)).
-The MCB aims at received points while valid; bits 1 and 2 separately permit
-firmware patrol after expiry and interruption toward a hit.
+The MCB holds an idle point for its 200 ms validity, behind any held target
+state; bits 1 and 2 separately permit firmware patrol after expiry and
+interruption toward a hit.
 
-No stamp crosses the wire (dropped 2026-10-03 to match MCBV3
-`position-based-cv`'s 15-byte `CvTarget`): the MCB runs `delay_ms` from frame receipt.
+`x/y/z` is a world-frame position in metres in raw aim `odom` (z up), as in
+TARGET_STATE. Freshness: [Jetson → MCB freshness](#jetson--mcb-freshness).
 
-Aim and fire travel as one frame on purpose. A fire delay is only meaningful
-against the aim point it was solved for; two frames could arrive apart, drop
-independently, or pair up wrongly on the MCB and fire at a point the delay
-was never computed for. `delay_ms` includes the estimated indexer latency plus any alignment wait.
-Firmware requests indexing after `max(0, delay_ms - FIRING_LATENCY_TIME)`;
-its configured latency and calibration limits live in
+### TARGET_STATE (id=7) — tracked enemy armor model
+
+80-byte payload, 89-byte frame (7.7 ms at 115200 baud). Subscribed on
+`~/target_state` (`dji_serial_bridge/msg/TargetState`, SensorDataQoS,
+best-effort); one frame per tracker update, no Jetson timer.
+
+| Off | Size | Type      | Field              | From                                   |
+|-----|------|-----------|--------------------|----------------------------------------|
+| 0   | 12   | float32×3 | `center`           | `center`, m                            |
+| 12  | 12   | float32×3 | `velocity`         | `velocity`, m/s                        |
+| 24  | 12   | float32×3 | `acceleration`     | `acceleration`, m/s²                   |
+| 36  | 4    | float32   | `yaw`              | `yaw` wrapped to `[-pi, pi)`, rad      |
+| 40  | 4    | float32   | `yaw_rate`         | `yaw_rate`, rad/s, + CCW               |
+| 44  | 8    | float32×2 | `radius`           | `radius[0..1]`, m                      |
+| 52  | 8    | float32×2 | `z_offset`         | `z_offset[0..1]`, m                    |
+| 60  | 12   | float32×3 | `panel`            | `panel`, m                             |
+| 72  | 2    | uint16    | `state_age_ms`     | write time − `header.stamp`            |
+| 74  | 2    | uint16    | `detection_age_ms` | write time − `detection_stamp`         |
+| 76  | 2    | uint16    | `track_id`         | low 16 bits of `robot_track_id`        |
+| 78  | 1    | uint8     | `confidence`       | `round(confidence × 255)`, clamped     |
+| 79  | 1    | uint8     | `flags`            | bit 0 `valid`, bit 1 `type_c_based_patrol`; 2-7 reserved 0 |
+
+Vectors are x, y, z in raw aim `odom` at the state's stamp; the armor model
+(panel k at `center + radius[k % 2]·(cos(yaw + k·pi/2), sin(yaw + k·pi/2), 0)
++ (0, 0, z_offset[k % 2])`) is `TargetState.msg`'s. `valid` clear means
+unconverged: the MCB aims at `panel` without leading or firing.
+
+The MCB owns everything after tracking: state propagation, spin
+classification, panel choice, lead, spin shot windows, fire lock, confidence
+and detection-age gates, and shot timing. Its ages are the wire ages plus time
+since receipt; uncorrected wire and USB latency (about 8 ms for this frame)
+make them slightly young. A held state aims until `state_age` reaches the
+target timeout (0.5 s); firing additionally requires `detection_age` at most
+0.15 s. Tuned values and the planner are in
 [MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
-A delay shorter than that latency requests indexing immediately; physical
-exit still takes time. `delay_ms` = 0 with `fire` set means request now;
-`fire` clear means `delay_ms` is meaningless. While a request is pending the
-MCB holds that frame and reads no newer one, so the following 40 Hz frames
-cannot cancel the shot. The sentry's latency is 20 ms (timed on the robot),
-and Jetson never sends `fire` with `delay_ms` under 25
-([`min_fire_delay_s`](../thornbots_pkg/README.md#point_to_cv_target)).
+While it holds a target state the MCB makes no hit turn.
 
-`x/y/z` is a world-frame position in metres in raw aim `odom` (z up).
-The firmware subtracts its never-relocalized, field-aligned pod position.
-The MCB holds the point with its IMU and
-odometry while the chassis moves and turns, then aims at it and applies its
-own gravity, drag and muzzle geometry. It is not a root- or camera-frame
-offset and not a barrel attitude. Velocity
-and spin are not on the wire; they are ROS-internal on `/cv/target_state`
-(`TargetState.msg`).
+The bridge sets both ages at the final write boundary
+([freshness](#jetson--mcb-freshness)), saturating at 65535 ms; it clamps
+`confidence` and wraps `yaw` but otherwise copies fields.
 
-### CV decision freshness
+### Jetson → MCB freshness
 
-The detection-age fire limit above is enforced by the producer; the bridge
-only sees the decision stamp and cannot infer the newest detection age.
-
-The bridge drops the entire CV_TARGET (including aim-only/idle frames) unless
-its original decision stamp is nonzero, well formed and less than 200 ms old
-at the final write boundary. Exactly 200 ms is expired. This matches the
-firmware target-validity interval as a Jetson-side age budget; firmware still
-starts its separate 200 ms validity timer at receipt. No stamp, payload,
-flag or `delay_ms` is rewritten, and expiry does not send a replacement fire
-command. Firmware physical firing gates and receipt expiry still apply.
+The bridge drops a CV_TARGET or TARGET_STATE unless its stamp (CVTarget's
+decision stamp; TargetState's `header.stamp`) is nonzero, well formed and
+less than 200 ms old at the final write boundary. Exactly 200 ms is expired.
+No payload field is rewritten except TARGET_STATE's ages, and expiry sends
+no replacement. Firmware receipt expiry still applies.
 
 The check runs after acquiring the write mutex and building the frame, directly
 before a single nonblocking write. A nonempty or unreadable serial output queue
 also drops the frame: no previous software TX backlog may delay it. There is
 no wait/retry after validation; EAGAIN and short writes fail. This bounds
-executor/mutex/write queuing on the Jetson. Normal 24-byte transmission takes
-about 2.1 ms at 115200 baud. Driver/hardware stalls after write acceptance and
+executor/mutex/write queuing on the Jetson. Normal transmission takes about 1.9 ms
+(CV_TARGET) or 7.7 ms (TARGET_STATE) at 115200 baud. Driver/hardware stalls after write acceptance and
 MCB scheduling are outside this software bound; end-to-end expiry would
 require a shared clock/deadline wire contract.
 
