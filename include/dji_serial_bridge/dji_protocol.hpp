@@ -41,6 +41,7 @@ enum class McbMsgType : uint16_t
   RELOCALIZE = 4,    // Jetson → MCB : ~/relocalize  (RelocalizePayload)
   DEBUG      = 6,    // MCB → Jetson : ~/debug (DebugBlob), opaque bytes
   PING       = 5,    // both ways    : ~/ping_to_mcb, ~/ping_from_mcb  (PingPayload)
+  TARGET_STATE = 7,  // Jetson → MCB : ~/target_state (TargetStatePayload)
 };
 
 static constexpr size_t DEBUG_MAX_PAYLOAD = 128;
@@ -106,24 +107,55 @@ struct __attribute__((packed)) NavGoalPayload
 };
 static_assert(sizeof(NavGoalPayload) == 8, "NavGoalPayload size mismatch");
 
-// CV_TARGET (id=1) — from ~/cv_target (CVTarget): aim point and fire decision
-// in one frame, so the delay can never pair with an aim point it was not
-// solved for.
+// CV_TARGET (id=1) — from ~/cv_target (CVTarget): idle look point only.
 // x/y/z is a WORLD-FRAME POSITION in raw aim odom (not a root- or
-// camera-frame offset, not a barrel attitude -- Type-C applies its own
-// ballistics on top). Field frame: UART_PROTOCOL.md.
-// No stamp: the MCB runs delay_ms from frame receipt.
+// camera-frame offset, not a barrel attitude). Field frame: UART_PROTOCOL.md.
+// Aiming and firing ride TARGET_STATE. No stamp crosses the wire.
 // Mirror of struct CvTarget in the firmware's JetsonSubsystem.hpp.
 struct __attribute__((packed)) CvTargetPayload
 {
   float    x;            // position, odom x (metres)
   float    y;            // position, odom y (metres)
   float    z;            // position, odom z, up (metres)
-  uint16_t delay_ms;     // fire this many ms after frame receipt (0 = immediate)
-  uint8_t  flags;        // CVTarget booleans: bit0 fire, bit1 type_c_based_patrol,
-                         // bit2 turn_to_hit, bit3 patrol, bits 4-7 reserved (0)
+  uint8_t  flags;        // bit1 type_c_based_patrol, bit2 turn_to_hit,
+                         // bits 0 and 3-7 reserved (0)
 };
-static_assert(sizeof(CvTargetPayload) == 15, "CvTargetPayload size mismatch");
+static_assert(sizeof(CvTargetPayload) == 13, "CvTargetPayload size mismatch");
+static_assert(offsetof(CvTargetPayload, flags) == 12, "CvTargetPayload flags offset");
+
+// TARGET_STATE (id=7) — from ~/target_state (TargetState): the tracker's
+// armor model. The MCB plans from it. Ages are measured at the final write
+// boundary, so no clock is shared. Table: UART_PROTOCOL.md.
+struct __attribute__((packed)) TargetStatePayload
+{
+  float    center[3];         // m, raw aim odom
+  float    velocity[3];       // m/s
+  float    acceleration[3];   // m/s^2
+  float    yaw;               // rad, wrapped to [-pi, pi)
+  float    yaw_rate;          // rad/s, + CCW
+  float    radius[2];         // m
+  float    z_offset[2];       // m
+  float    panel[3];          // m
+  uint16_t state_age_ms;      // write time - header.stamp
+  uint16_t detection_age_ms;  // write time - detection_stamp
+  uint16_t track_id;          // low 16 bits of robot_track_id
+  uint8_t  confidence;        // round(confidence * 255), clamped
+  uint8_t  flags;             // bit0 valid, bit1 type_c_based_patrol, 2-7 reserved (0)
+};
+static_assert(sizeof(TargetStatePayload) == 80, "TargetStatePayload size mismatch");
+static_assert(offsetof(TargetStatePayload, yaw) == 36, "TargetStatePayload yaw offset");
+static_assert(offsetof(TargetStatePayload, yaw_rate) == 40, "TargetStatePayload yaw_rate offset");
+static_assert(offsetof(TargetStatePayload, radius) == 44, "TargetStatePayload radius offset");
+static_assert(offsetof(TargetStatePayload, z_offset) == 52, "TargetStatePayload z_offset offset");
+static_assert(offsetof(TargetStatePayload, panel) == 60, "TargetStatePayload panel offset");
+static_assert(offsetof(TargetStatePayload, state_age_ms) == 72,
+  "TargetStatePayload state_age offset");
+static_assert(offsetof(TargetStatePayload, detection_age_ms) == 74,
+  "TargetStatePayload detection_age offset");
+static_assert(offsetof(TargetStatePayload, track_id) == 76, "TargetStatePayload track_id offset");
+static_assert(offsetof(TargetStatePayload, confidence) == 78,
+  "TargetStatePayload confidence offset");
+static_assert(offsetof(TargetStatePayload, flags) == 79, "TargetStatePayload flags offset");
 
 // RELOCALIZE (id=4) — lidar-estimated robot position from ~/relocalize
 // (PointStamped), updates only the MCB navigation offset, never raw aim odom.
