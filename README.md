@@ -4,7 +4,7 @@ ROS 2 node bridging the DJI-framed UART protocol spoken by the MCB (main
 control board) with ROS 2 topics.
 
 **Wire formats: [`UART_PROTOCOL.md`](UART_PROTOCOL.md)** — frame layout, all
-seven message IDs, byte tables both directions, REF_SYS bits, POSE odom
+eight message IDs, byte tables both directions, REF_SYS bits, POSE odom
 status codes. Read it before touching `dji_protocol.hpp` or any `msg/` file
 that crosses the link.
 
@@ -33,10 +33,13 @@ Raw aim coordinates, a separate translation-only navigation offset and the
 pitch-pivot correction are implemented in the workspace-pinned MCBV3. Deploy
 firmware and ROS together; physical acceptance is tracked in the [ROADMAP](../docs/ROADMAP.md#later-needs-a-robot).
 
-Hit-turn permission follows target versus idle frames; see the
-[CV_TARGET contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision).
-The existing `patrol` bit now marks an idle/non-target point. Firmware still
-ignores it; the payload, messages and firmware are unchanged. The
+The MCB plans aim and fire from `TARGET_STATE` and takes idle looks from the
+13-byte `CV_TARGET`; hit-turn permission and the firmware-side layout are in
+the [CV_TARGET](UART_PROTOCOL.md#cv_target-id1--idle-look-point) and
+[TARGET_STATE](UART_PROTOCOL.md#target_state-id7--tracked-enemy-armor-model)
+contracts. Both layouts change together with the firmware (13 and 80 bytes; the
+former 15-byte `CV_TARGET` and its `fire`/`delay_ms`/`patrol` fields are gone).
+`mcb_relay` sets `type_c_based_patrol` on both messages. The
 [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw) also
 remains unapplied; current heading-fixed aiming does not require it.
 
@@ -55,17 +58,14 @@ Automatic indexer recovery after calibration/pre-game state is maintained in
 [MCBV3's design](../firmware/MCBV3/README.md#automatic-indexer-recovery).
 Paths below are under `MCB-project/src/` in MCBV3.
 
-- `CV_TARGET` is the current 15-byte payload
-  ([contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision)).
-  Aim subtracts raw aim-frame odometry from x/y and the pitch-pivot height
-  from ground-frame z before solving ballistics
-  (`subsystems/jetson/AutoAimAndFireCommand.cpp`) and holds a received aim for
-  200 ms. Bit 0 requests indexing after `max(0, delay_ms - FIRING_LATENCY_TIME)`;
-  a pending shot holds its frame, and newer frames are read after it is requested.
-- Bit 2 permits a 500 ms hit turn, including interruption of an idle aim;
-  clearing it cancels that turn. Bit 3 is informational and does not change
-  firmware gates; the compiled [sim firmware tests](../sim/README.md#mcb-emulator)
-  exercise it clear/set. Flag semantics and idle-frame rules are in the contract.
+- `CV_TARGET` (13 bytes, idle look) and `TARGET_STATE` (80 bytes) follow the
+  [contracts](UART_PROTOCOL.md#cv_target-id1--idle-look-point); the MCB owns
+  planning, fire lock, gates and shot timing
+  ([MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry)).
+  The firmware pin and sim must move to the matching MCBV3 commit with this
+  change; the 053285f review above predates both payloads.
+- Bit 2 (`turn_to_hit`) of `CV_TARGET` permits a 500 ms hit turn only while no
+  target state is held; clearing it cancels that turn.
 - POSE position, velocity and head yaw use the raw aim frame
   ([message types](UART_PROTOCOL.md#message-types)). `mcb_x_right` is removed.
   `odom_status` reports `ODOM_PODS` or a stale-Pico `ODOM_I2C_DEAD`
@@ -78,7 +78,7 @@ Paths below are under `MCB-project/src/` in MCBV3.
   unvalidated.
 - The UART receiver has one mailbox slot: a later frame can overwrite an
   unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
-  with CV_TARGET traffic before relying on corrections while moving.
+  with CV_TARGET and TARGET_STATE traffic before relying on corrections while moving.
 - The normal sentry switch schedules the fixed-waypoint
   `SimpleAutoDriveCommand`, not the NAV_GOAL reader `AutoDriveCommand`
   (`robots/sentry/SentryControl.hpp`). Sim's `mcb.launch.py drive:=auto`
@@ -89,7 +89,7 @@ Paths below are under `MCB-project/src/` in MCBV3.
 
 ### Aim and navigation frames
 
-POSE and CV_TARGET use continuous raw aim odometry; NAV_GOAL and RELOCALIZE
+POSE, CV_TARGET and TARGET_STATE use continuous raw aim odometry; NAV_GOAL and RELOCALIZE
 use separately corrected navigation odometry. The exact frame roles are owned by
 [UART_PROTOCOL](UART_PROTOCOL.md#message-types). Deploy the matching
 firmware and ROS stack together; the unchanged payload length cannot detect
@@ -98,7 +98,7 @@ an axis mismatch. The physical team's start pose remains unmeasured on the field
 Jetson camera/target/aim transforms use raw MCB POSE, independently of the
 EKF and map localization, so navigation corrections cannot move gimbal aim.
 Raw drift and UART/sample timing still affect aim. The single-slot mailbox
-can lose a RELOCALIZE arriving alongside CV_TARGET; measure that and the
+can lose a RELOCALIZE arriving alongside TARGET_STATE or CV_TARGET; measure that and the
 UART/read delays on hardware.
 
 `root` is heading-fixed and gimbal yaw is world yaw, so the existing aim does
@@ -109,7 +109,7 @@ moving-shooter acceptance are in [ROADMAP track B](../docs/ROADMAP.md#b-hit-whil
 
 ## Topics
 
-One per message ID, two for `PING`: `~/nav_goal`, `~/cv_target`, `~/pose`,
+One per message ID, two for `PING`: `~/nav_goal`, `~/cv_target`, `~/target_state`, `~/pose`,
 `~/ref_sys`, `~/debug`, `~/relocalize`, `~/ping_to_mcb`, `~/ping_from_mcb`. Types and directions are in the
 [summary table](UART_PROTOCOL.md#message-types). They live in the node's private namespace, so `~/nav_goal`
 is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
@@ -117,13 +117,14 @@ is `/dji_serial_bridge/nav_goal` until a launch file remaps it.
 The node has no opinion on the other end of any of them. `thornbots_pkg`'s
 `mcb_relay` and the CV pipeline connect directly, remapped as needed.
 
-The producer limits firing by newest detection age and coasts aim before
-switching to idle frames; see the
-[CV_TARGET contract](UART_PROTOCOL.md#cv_target-id1--aim-point-and-fire-decision)
-for the freshness limits and flag semantics. CV decisions also expire at the
-bridge write boundary; see the
-[decision freshness policy](UART_PROTOCOL.md#cv-decision-freshness) for clock
-requirements, rejected stamps and serial queuing limits.
+`~/cv_target` carries idle looks only, while the Jetson holds no fresh target;
+`~/target_state` carries the tracker's armor model on every update, with its two
+ages set at the write. The MCB decides aim, fire and detection-age gating (see
+[TARGET_STATE](UART_PROTOCOL.md#target_state-id7--tracked-enemy-armor-model)).
+Both expire at the bridge write boundary; see
+[Jetson to MCB freshness](UART_PROTOCOL.md#jetson--mcb-freshness) for clock
+requirements, rejected stamps (including `detection_stamp`) and serial queuing
+limits.
 
 `~/debug` publishes the firmware's opaque `JetsonSubsystem::sendDebug` bytes as
 `DebugBlob` with a send-start stamp and empty frame ID, untouched; decode
