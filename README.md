@@ -250,6 +250,10 @@ In this mode the Jetson-to-MCB busy gate for CV_TARGET and TARGET_STATE replaces
 `TIOCOUTQ` with the sim-clock wire: a decision drops while an earlier frame's
 bytes (frame size x 10 / `baudrate`) are still on the wire, because the simulator
 drains the PTY only at its own steps. The robot path is unchanged.
+In this mode each Jetson-to-MCB decision, written or dropped, also publishes a reliable
+`std_msgs/Header` on `~/tx_ack/{nav_goal,cv_target,target_state,relocalize,ping}` after
+the PTY write: the message's own stamp for the first three, `now()` for the others. The
+simulator's lockstep chains wait on these so a frame reaches the PTY at a fixed step.
 This interface does not change physical UART bytes.
 
 Both pending queues hold at most 32 frames. A mismatch, unsupported frame,

@@ -35,9 +35,11 @@
 #include <cstring>
 #include <chrono>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
+#include <tuple>
 #include <vector>
 
 #include <rclcpp/rclcpp.hpp>
@@ -121,6 +123,7 @@ public:
     declare_parameter<bool>("debug_log", true);
     declare_parameter<bool>("sim_frame_metadata", false);
     declare_parameter<int>("sim_frame_timeout_ms", 1000);
+    declare_parameter<bool>("sim_tx_queue", false);
     coordinated_ = get_parameter("sim_frame_metadata").as_bool();
     timeout_ms_ = get_parameter("sim_frame_timeout_ms").as_int();
     if (coordinated_ && (!get_parameter("use_sim_time").as_bool() ||
@@ -214,6 +217,19 @@ public:
           return result;
         });
       ack_pub_ = create_publisher<dji_serial_bridge::msg::SimFrameAck>("~/sim_frame_ack", 32);
+      // One Header per outgoing frame decision, sent or dropped, for the lockstep chains.
+      for (const char * name : {"nav_goal", "cv_target", "target_state", "relocalize", "ping"}) {
+        tx_ack_pubs_[name] = create_publisher<std_msgs::msg::Header>(
+          std::string("~/tx_ack/") + name, rclcpp::QoS(100).reliable());
+      }
+      tx_queue_ = get_parameter("sim_tx_queue").as_bool();
+      if (tx_queue_) {
+        flushed_pub_ = create_publisher<std_msgs::msg::Header>(
+          "~/sim_tx_flushed", rclcpp::QoS(100).reliable());
+        flush_sub_ = create_subscription<std_msgs::msg::Header>(
+          "~/sim_tx_flush", rclcpp::QoS(100).reliable(),
+          [this](std_msgs::msg::Header::ConstSharedPtr msg) {flush_tx(*msg);});
+      }
       ready_pub_ = create_publisher<std_msgs::msg::Header>(
         "~/sim_clock_ready", rclcpp::QoS(1).reliable().transient_local());
       observed_clock_pub_ = create_publisher<std_msgs::msg::Header>(
@@ -522,12 +538,72 @@ private:
   // Write path — called from subscriber callbacks (executor thread)
   // ═══════════════════════════════════════════════════════════════════════
 
+  // Coordinated simulation with `sim_tx_queue`: frames wait here until the coordinator's
+  // flush for a hold, then go out sorted by (type, stamp, arrival) and gated on the hold
+  // time, so neither which producer won a race nor a clock this process has not received
+  // yet decides what reaches the PTY, or its order. Otherwise a frame goes out at once.
+  struct PendingTx
+  {
+    McbMsgType type;
+    std::vector<uint8_t> payload;
+    bool has_decision, has_detection;
+    builtin_interfaces::msg::Time decision, detection;
+    uint64_t arrival;
+  };
+
   bool send_frame(
     McbMsgType msg_type,
     const uint8_t *payload,
     uint16_t payload_len,
     const builtin_interfaces::msg::Time * decision_stamp = nullptr,
     const builtin_interfaces::msg::Time * detection_stamp = nullptr)
+  {
+    if (coordinated_ && tx_queue_) {
+      PendingTx item{msg_type, std::vector<uint8_t>(payload, payload + payload_len),
+        decision_stamp != nullptr, detection_stamp != nullptr, {}, {}, 0};
+      if (decision_stamp) {item.decision = *decision_stamp;}
+      if (detection_stamp) {item.detection = *detection_stamp;}
+      std::lock_guard<std::mutex> lock(tx_queue_mutex_);
+      item.arrival = tx_arrivals_++;
+      tx_pending_.push_back(std::move(item));
+      return true;
+    }
+    return emit_frame(msg_type, payload, payload_len, decision_stamp, detection_stamp,
+      now().nanoseconds());
+  }
+
+  void flush_tx(const std_msgs::msg::Header & flush)
+  {
+    std::vector<PendingTx> batch;
+    {
+      std::lock_guard<std::mutex> lock(tx_queue_mutex_);
+      batch.swap(tx_pending_);
+    }
+    std::sort(batch.begin(), batch.end(), [](const PendingTx & a, const PendingTx & b) {
+        const auto key = [](const PendingTx & x) {
+          return std::make_tuple(
+            static_cast<int>(x.type), x.has_decision ? rclcpp::Time(x.decision).nanoseconds() : 0,
+            x.arrival);
+        };
+        return key(a) < key(b);
+      });
+    const int64_t at = rclcpp::Time(flush.stamp).nanoseconds();
+    for (const auto & item : batch) {
+      emit_frame(item.type, item.payload.data(), static_cast<uint16_t>(item.payload.size()),
+        item.has_decision ? &item.decision : nullptr,
+        item.has_detection ? &item.detection : nullptr, at);
+    }
+    flushed_pub_->publish(flush);
+  }
+
+  // `now_ns` is the clock the wire gates use (the hold time when flushed).
+  bool emit_frame(
+    McbMsgType msg_type,
+    const uint8_t *payload,
+    uint16_t payload_len,
+    const builtin_interfaces::msg::Time * decision_stamp,
+    const builtin_interfaces::msg::Time * detection_stamp,
+    int64_t now_ns)
   {
     std::lock_guard<std::mutex> lock(write_mutex_);
     FrameHeader hdr{};
@@ -556,14 +632,13 @@ private:
       // reflect scheduling, not the 8N1 wire).
       bool ok = decision_stamp != nullptr;
       if (ok && coordinated_) {
-        ok = now().nanoseconds() >= tx_wire_free_ns_;
+        ok = now_ns >= tx_wire_free_ns_;
       } else if (ok) {
         int pending = 0;
         ok = ::ioctl(serial_fd_, TIOCOUTQ, &pending) == 0 && pending == 0;
       }
       if (ok) {
-        // One clock read serves the freshness gate and both wire ages.
-        const int64_t now_ns = now().nanoseconds();
+        // One clock value serves the freshness gate and both wire ages.
         int64_t state_age_ns = 0;
         int64_t detection_age_ns = 0;
         ok = dji_bridge::stamp_age_ns(
@@ -600,7 +675,7 @@ private:
     }
     if (coordinated_) {
       // The wire is busy until this frame's last byte has been sent.
-      tx_wire_free_ns_ = std::max(tx_wire_free_ns_, now().nanoseconds()) +
+      tx_wire_free_ns_ = std::max(tx_wire_free_ns_, now_ns) +
         static_cast<int64_t>(frame.size()) * byte_wire_ns_;
     }
     RCLCPP_DEBUG(get_logger(),
@@ -1057,6 +1132,16 @@ private:
   // Subscriber callbacks  (Jetson → MCB)
   // ═══════════════════════════════════════════════════════════════════════
 
+  // Coordinated simulation only: after the frame is written or dropped, publish its
+  // decision stamp (now() for frames without one) so a chain can wait for the PTY write.
+  void tx_ack(const char * name, const builtin_interfaces::msg::Time * stamp)
+  {
+    if (!coordinated_) {return;}
+    std_msgs::msg::Header h;
+    if (stamp) {h.stamp = *stamp;} else {h.stamp = now();}
+    tx_ack_pubs_.at(name)->publish(h);
+  }
+
   // The wire carries no stamp, so the header stops here.
   void nav_goal_callback(const geometry_msgs::msg::PointStamped::SharedPtr msg)
   {
@@ -1066,6 +1151,7 @@ private:
 
     const bool ok = send_frame(McbMsgType::NAV_GOAL,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+    tx_ack("nav_goal", &msg->header.stamp);
     if (ok) {
       nav_goal_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -1085,6 +1171,7 @@ private:
     const bool ok = send_frame(McbMsgType::CV_TARGET,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p),
       &msg->header.stamp);
+    tx_ack("cv_target", &msg->header.stamp);
     if (ok) {
       cv_target_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -1100,6 +1187,7 @@ private:
     const bool ok = send_frame(McbMsgType::TARGET_STATE,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p),
       &msg->header.stamp, &msg->detection_stamp);
+    tx_ack("target_state", &msg->header.stamp);
     if (ok) {
       target_state_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -1116,6 +1204,7 @@ private:
 
     const bool ok = send_frame(McbMsgType::RELOCALIZE,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+    tx_ack("relocalize", nullptr);
     if (ok) {
       const uint64_t count = relocalize_msgs_tx_.fetch_add(1, std::memory_order_relaxed) + 1;
       // Raw aim pose and corrected navigation position are different frames.
@@ -1147,6 +1236,7 @@ private:
 
     const bool ok = send_frame(McbMsgType::PING,
                                    reinterpret_cast<const uint8_t *>(&p), sizeof(p));
+    tx_ack("ping", nullptr);
     if (ok) {
       ping_msgs_tx_.fetch_add(1, std::memory_order_relaxed);
       if (debug_log_) {
@@ -1172,7 +1262,14 @@ private:
   std::deque<std::pair<std::vector<uint8_t>, SteadyTime>> frames_;
   std::deque<std::pair<dji_serial_bridge::msg::SimFrameMetadata, SteadyTime>> metadata_;
   int64_t tx_wire_free_ns_ = 0;  // guarded by write_mutex_; coordinated simulation only
+  bool tx_queue_{false};
+  std::mutex tx_queue_mutex_;
+  std::vector<PendingTx> tx_pending_;  // guarded by tx_queue_mutex_
+  uint64_t tx_arrivals_{0};            // guarded by tx_queue_mutex_
+  rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr flushed_pub_;
+  rclcpp::Subscription<std_msgs::msg::Header>::SharedPtr flush_sub_;
   rclcpp::Publisher<dji_serial_bridge::msg::SimFrameAck>::SharedPtr ack_pub_;
+  std::map<std::string, rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr> tx_ack_pubs_;
   rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr ready_pub_;
   rclcpp::Publisher<std_msgs::msg::Header>::SharedPtr observed_clock_pub_;
   rclcpp::Subscription<dji_serial_bridge::msg::SimFrameMetadata>::SharedPtr metadata_sub_;
