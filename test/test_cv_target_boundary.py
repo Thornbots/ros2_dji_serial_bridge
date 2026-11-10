@@ -25,9 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 class CvTargetBoundaryTest(unittest.TestCase):
     def test_production_methods(self):
         source = (ROOT / 'src/dji_serial_bridge_node.cpp').read_text()
-        methods = []
+        start = source.index('  struct PendingTx\n')
+        end = source.index('\n  };', start) + len('\n  };')
+        methods = [source[start:end]]
         for signature in [
-            '  bool send_frame(', '  void cv_target_callback(',
+            '  bool send_frame(', '  bool emit_frame(', '  void cv_target_callback(',
             '  void target_state_callback(',
         ]:
             start = source.index(signature)

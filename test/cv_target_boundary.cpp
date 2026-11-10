@@ -98,12 +98,18 @@ public:
   int serial_fd_{-1};
   uint8_t tx_seq_{0};
   bool coordinated_{false};
+  bool tx_queue_{false};
+  std::mutex tx_queue_mutex_;
+  uint64_t tx_arrivals_{0};
   int64_t byte_wire_ns_{86805};  // 115200 baud, 8N1
   int64_t tx_wire_free_ns_{0};
   struct Now {int64_t ns; int64_t nanoseconds() const {return ns;}};
   Now now() {++clock_reads; return {clock_ns.load()};}
 
+  void tx_ack(const char *, const builtin_interfaces::msg::Time *) {}
+
 #include "bridge_write_methods.inc"
+  std::vector<PendingTx> tx_pending_;
 };
 #undef ioctl
 #undef write
@@ -345,6 +351,21 @@ static void test_coordinated_wire()
 int main()
 {
   test_coordinated_wire();
+  {
+    Bridge queued;
+    queued.coordinated_ = queued.tx_queue_ = true;
+    auto msg = std::make_shared<dji_serial_bridge::msg::CVTarget>();
+    msg->header.stamp = {1, 0};
+    reset();
+    queued.cv_target_callback(msg);
+    assert(writes == 0 && queued.tx_pending_.size() == 1);
+    const auto & item = queued.tx_pending_.front();
+    assert(item.type == McbMsgType::CV_TARGET && item.has_decision);
+    assert(item.decision.sec == 1 && item.arrival == 0);
+    assert(queued.emit_frame(item.type, item.payload.data(), item.payload.size(),
+      &item.decision, nullptr, 1000000000LL));
+    assert(writes == 1);
+  }
   using dji_bridge::cv_target_is_fresh;
   assert(cv_target_is_fresh(1, 0, 1000000000LL));
   assert(cv_target_is_fresh(1, 0, 1199999999LL));
