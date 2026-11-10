@@ -569,7 +569,7 @@ private:
       return true;
     }
     return emit_frame(msg_type, payload, payload_len, decision_stamp, detection_stamp,
-      now().nanoseconds());
+      -1);
   }
 
   void flush_tx(const std_msgs::msg::Header & flush)
@@ -596,7 +596,7 @@ private:
     flushed_pub_->publish(flush);
   }
 
-  // `now_ns` is the clock the wire gates use (the hold time when flushed).
+  // A negative time samples the clock under the write lock; flushes carry their hold time.
   bool emit_frame(
     McbMsgType msg_type,
     const uint8_t *payload,
@@ -606,6 +606,7 @@ private:
     int64_t now_ns)
   {
     std::lock_guard<std::mutex> lock(write_mutex_);
+    if (now_ns < 0) {now_ns = now().nanoseconds();}
     FrameHeader hdr{};
     hdr.head = FRAME_HEAD;
     hdr.dataLength = payload_len;
