@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="580" viewBox="0 0 960 580" font-family="DejaVu Sans, Arial, sans-serif" font-size="14">
+  <title>Field-centred wire frame and robot frames (top view, not to scale)</title>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/>
+    </marker>
+  </defs>
+  <rect width="960" height="580" fill="#ffffff"/>
+
+  <!-- Field (schematic) -->
+  <text x="40" y="30" font-size="17" font-weight="bold">Field frame (top view, not to scale): registered map, initialized nav_odom</text>
+  <rect x="40" y="50" width="880" height="270" fill="#f6f6f6" stroke="#444" stroke-width="2"/>
+  <rect x="40" y="50" width="70" height="270" fill="#f3d2d2" stroke="none"/>
+  <rect x="850" y="50" width="70" height="270" fill="#d2dcf3" stroke="none"/>
+  <text x="75" y="72" text-anchor="middle" fill="#a11">red base</text>
+  <text x="885" y="72" text-anchor="middle" fill="#14a">blue base</text>
+
+  <!-- Origin and axes -->
+  <line x1="480" y1="185" x2="580" y2="185" stroke="#000" stroke-width="2.5" marker-end="url(#a)"/>
+  <line x1="480" y1="185" x2="480" y2="95" stroke="#000" stroke-width="2.5" marker-end="url(#a)"/>
+  <circle cx="480" cy="185" r="9" fill="#fff" stroke="#000" stroke-width="2"/>
+  <circle cx="480" cy="185" r="2.5" fill="#000"/>
+  <text x="586" y="190" font-weight="bold">+x</text>
+  <text x="586" y="208" font-size="12">toward blue base</text>
+  <text x="472" y="88" font-weight="bold" text-anchor="end">+y</text>
+  <text x="488" y="88" font-size="12">(left of +x)</text>
+  <text x="462" y="210" font-size="12" text-anchor="end">(0, 0) field centre</text>
+  <text x="462" y="226" font-size="12" text-anchor="end">+z out of page</text>
+  <path d="M 525,185 A 45,45 0 0 0 512,153" fill="none" stroke="#2a7" stroke-width="2" marker-end="url(#a)"/>
+  <text x="530" y="160" font-size="12" fill="#2a7">+yaw = CCW</text>
+
+  <!-- Red start -->
+  <rect x="150" y="165" width="40" height="40" rx="5" fill="#e66" stroke="#a11" stroke-width="2"/>
+  <line x1="170" y1="185" x2="170" y2="110" stroke="#a11" stroke-width="3" marker-end="url(#a)"/>
+  <text x="125" y="240" fill="#a11" font-weight="bold">red start (configured)</text>
+  <text x="125" y="258" fill="#a11" font-size="12">faces +y: chassis heading π/2</text>
+  <text x="125" y="276" fill="#a11" font-size="12">raw odom origin (0, 0)</text>
+
+  <!-- Blue start -->
+  <rect x="770" y="165" width="40" height="40" rx="5" fill="#69e" stroke="#14a" stroke-width="2"/>
+  <line x1="790" y1="185" x2="790" y2="110" stroke="#14a" stroke-width="3" marker-end="url(#a)"/>
+  <text x="835" y="240" fill="#14a" font-weight="bold" text-anchor="end">blue start (configured)</text>
+  <text x="835" y="258" fill="#14a" font-size="12" text-anchor="end">faces +y: chassis heading π/2</text>
+  <text x="835" y="276" fill="#14a" font-size="12" text-anchor="end">raw odom origin (0, 0)</text>
+
+  <text x="480" y="300" text-anchor="middle" font-size="12" fill="#333">root yaw is 0 for both teams; both chassis_yaw joints are π/2 at boot</text>
+
+  <!-- Robot inset -->
+  <text x="40" y="360" font-size="17" font-weight="bold">Robot frames (same top view)</text>
+  <rect x="40" y="372" width="880" height="192" fill="#fafafa" stroke="#bbb"/>
+
+  <g transform="translate(180,465)">
+    <line x1="0" y1="0" x2="70" y2="0" stroke="#000" stroke-width="2.5" marker-end="url(#a)"/>
+    <line x1="0" y1="0" x2="0" y2="-70" stroke="#000" stroke-width="2.5" marker-end="url(#a)"/>
+    <text x="76" y="5" font-weight="bold">x</text>
+    <text x="-6" y="-74" font-weight="bold">y</text>
+    <text x="-120" y="40" font-weight="bold">root</text>
+    <text x="-120" y="57" font-size="12">heading-fixed: axes always</text>
+    <text x="-120" y="72" font-size="12">match odom, never rotate</text>
+  </g>
+
+  <g transform="translate(470,465)">
+    <line x1="0" y1="0" x2="70" y2="0" stroke="#aaa" stroke-width="1.5" stroke-dasharray="5,4"/>
+    <g transform="rotate(-35)">
+      <rect x="-32" y="-32" width="64" height="64" rx="6" fill="#ddd" stroke="#555" stroke-width="2"/>
+      <line x1="0" y1="0" x2="78" y2="0" stroke="#555" stroke-width="2.5" marker-end="url(#a)"/>
+    </g>
+    <path d="M 52,0 A 52,52 0 0 0 42.6,-29.8" fill="none" stroke="#2a7" stroke-width="2" marker-end="url(#a)"/>
+    <text x="58" y="-16" font-size="12" fill="#2a7">chassis_yaw</text>
+    <text x="-110" y="52" font-weight="bold">body</text>
+    <text x="-110" y="69" font-size="12">chassis_yaw joint under root (CCW +)</text>
+  </g>
+
+  <g transform="translate(760,465)">
+    <line x1="0" y1="0" x2="70" y2="0" stroke="#aaa" stroke-width="1.5" stroke-dasharray="5,4"/>
+    <g transform="rotate(-60)">
+      <line x1="0" y1="0" x2="80" y2="0" stroke="#c60" stroke-width="3.5" marker-end="url(#a)"/>
+    </g>
+    <circle cx="0" cy="0" r="10" fill="#fc9" stroke="#c60" stroke-width="2"/>
+    <path d="M 46,0 A 46,46 0 0 0 23,-39.8" fill="none" stroke="#2a7" stroke-width="2" marker-end="url(#a)"/>
+    <text x="52" y="-14" font-size="12" fill="#2a7">head_yaw</text>
+    <text x="-110" y="52" font-weight="bold">head</text>
+    <text x="-110" y="69" font-size="12">world head yaw under root;</text>
+    <text x="-110" y="84" font-size="12">+x = gun direction</text>
+  </g>
+</svg>

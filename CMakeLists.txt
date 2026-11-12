@@ -11,13 +11,19 @@ endif()
 # ── Find dependencies ──────────────────────────────────────────────────────────
 find_package(ament_cmake        REQUIRED)
 find_package(rclcpp             REQUIRED)
+find_package(diagnostic_updater REQUIRED)
+find_package(diagnostic_msgs REQUIRED)
 find_package(std_msgs           REQUIRED)
+find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs      REQUIRED)
+find_package(rosgraph_msgs     REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
 # ── Generate custom messages ───────────────────────────────────────────────────
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/SimFrameMetadata.msg"
+  "msg/SimFrameAck.msg"
   "msg/RobotPose.msg"
   "msg/RefSysStatus.msg"
   "msg/CVTarget.msg"
@@ -25,7 +31,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PanelDetectionArray.msg"
   "msg/TargetState.msg"
   "msg/Ping.msg"
-  DEPENDENCIES std_msgs geometry_msgs
+  "msg/DebugBlob.msg"
+  DEPENDENCIES std_msgs geometry_msgs builtin_interfaces
 )
 
 # Make generated headers available before the executable target is defined.
@@ -45,8 +52,11 @@ target_include_directories(dji_serial_bridge_node
 
 ament_target_dependencies(dji_serial_bridge_node
   rclcpp
+  diagnostic_updater
+  diagnostic_msgs
   std_msgs
   geometry_msgs
+  rosgraph_msgs
 )
 
 # Link the generated message type-support to the executable.
@@ -76,6 +86,23 @@ install(DIRECTORY config launch
 
 # ── Tests ──────────────────────────────────────────────────────────
 if(BUILD_TESTING)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME test_cv_target_boundary
+    COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_cv_target_boundary.py
+  )
+  add_test(NAME test_debug_parser
+    COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}"
+      ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_debug_parser.py
+  )
+  add_test(NAME test_bridge_health
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_bridge_health.py
+      $<TARGET_FILE:dji_serial_bridge_node>)
+  set_tests_properties(test_bridge_health PROPERTIES TIMEOUT 30)
+  add_test(NAME test_sim_frame_pty
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test/test_sim_frame_pty.py
+      $<TARGET_FILE:dji_serial_bridge_node>)
+  set_tests_properties(test_sim_frame_pty PROPERTIES TIMEOUT 40)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_diagnostic_frames test/test_diagnostic_frames.cpp)
   target_include_directories(test_diagnostic_frames PRIVATE include)
@@ -85,6 +112,10 @@ if(BUILD_TESTING)
     src/crc_dji.cpp
     include/dji_serial_bridge/crc_dji.hpp
   )
+  # Model GoogleTest macros explicitly while analyzing every existing source file.
+  find_package(ament_cmake_cppcheck REQUIRED)
+  ament_cppcheck(LIBRARIES googletest INCLUDE_DIRS include EXCLUDE ${AMENT_LINT_AUTO_FILE_EXCLUDE})
+  list(APPEND AMENT_LINT_AUTO_EXCLUDE ament_cmake_cppcheck)
   find_package(ament_lint_auto REQUIRED)
   ament_lint_auto_find_test_dependencies()
 endif()

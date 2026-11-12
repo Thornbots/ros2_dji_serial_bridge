@@ -5,8 +5,8 @@
 # taken off.
 std_msgs/Header header
 
-# x/y, velocity and head_yaw are in the field frame: REP-105, (0, 0) at the
-# field centre, x toward blue's base (UART_PROTOCOL.md).
+# x/y, velocity and head_yaw use raw aim odom; RELOCALIZE never changes them.
+# Frame conventions and origin: UART_PROTOCOL.md, Message types.
 float32 x          # chassis X position  (metres)
 float32 y          # chassis Y position  (metres)
 float32 vel_x      # chassis X velocity  (m/s)
