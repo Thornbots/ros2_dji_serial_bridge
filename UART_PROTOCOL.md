@@ -273,7 +273,7 @@ Exactly 0.6 s is expired. This deadline uses only elapsed receipt time on the
 MCB's wrap-safe clock, not state age or detection age. Clear releases immediately;
 CV_TARGET and nonassigned/malformed frames cannot extend the deadline.
 The `confidence` and `detection_age_ms` fields remain diagnostic and are not
-MCB fire gates. The [MCBV3 planner design](../firmware/MCBV3/README.md#target-handoff-redesign-proposed-review-before-implementation)
+MCB fire gates. The [MCBV3 planner design](../firmware/MCBV3/README.md#mcbv3-aiming-planner)
 owns the state machine, shot windows, alignment gate and ballistics.
 
 ### Jetson → MCB freshness
