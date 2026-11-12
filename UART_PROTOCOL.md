@@ -208,24 +208,40 @@ updates does not suppress estimator updates.
 
 | Event | Send rule |
 | --- | --- |
-| Assign | Send immediately once the selected track has the minimum successful update count and finite position, velocity and spin-rate variances within their limits. No time-based dwell. |
+| Assign | Send immediately when the selected track's propagated YOLO confidence reaches the assign threshold and its model passes finite-data sanity checks. No update-count, variance-limit or time-based dwell requirement. |
 | Update | Send immediately for a new confident track id or model drift beyond tolerance; otherwise refresh the confident assigned track at 5 Hz. |
-| Clear | Send immediately on loss of assignment confidence or explicit loss of the selected track. Clear the previous assignment before waiting for a replacement to converge. |
+| Clear | Send immediately when propagated YOLO confidence reaches the lower clear threshold or the selected track is explicitly retired/reset. Clear the previous assignment before waiting for a replacement to qualify. |
 
-Proposed initial review values are five contributing detection batches for one
-robot track, each position variance at most `0.01 m²`, each velocity variance at
-most `0.25 (m/s)²`, and spin-rate variance at most `1.0 (rad/s)²`. Count actual
-measurement updates, not predictions/timer ticks, and do not reset on panel
-handoffs within one robot. These are tuning proposals to validate with the
-estimation/aiming benches, not detector-confidence thresholds. Implementation
-defaults will live in source declarations.
+Assignment confidence is the selected robot's propagated YOLO detection score,
+as defined at its [tracker/manager implementation home](../thornbots_pkg/README.md#propagated-yolo-confidence).
+Use an assign threshold of **0.60** and a lower clear threshold of **0.40** as
+initial tuning values: assign at `C >= 0.60`, clear at `C <= 0.40`, and retain
+the existing assignment between them. An unassigned track in that band stays
+unassigned. There is no EKF convergence/update-count gate or covariance magnitude
+limit. Keep a sanity check for finite model/covariance fields and nonnegative
+variance diagonals; invalid numerical state cannot be assigned and clears an
+existing assignment immediately. Finite covariance is a data-integrity check,
+not a confidence estimate. Parameter declarations belong in source; validate
+the initial YOLO thresholds and decay against recorded detections and benches.
 
 For drift, propagate the last model sent using the MCB's constant-acceleration,
 rigid-spin model, starting at its carried state stamp. Compare it with the current
-estimate at the same time in raw aim `odom`. The proposed tolerance is 20 mm:
+estimate at the same time in raw aim `odom`. The resend tolerance is **100 mm**:
 take the maximum center or corresponding-panel position difference both now and
 200 ms ahead, so velocity, acceleration and spin disagreement can also trigger
-an early update. Match panel identities geometrically across tracker panel
+an early update when the maximum exceeds 100 mm. For an otherwise matching
+model, the 200 ms comparison converts isolated errors to that displacement:
+
+- Velocity error: `0.100 / 0.200 ≈ 0.5 m/s`.
+- Acceleration error: `2 * 0.100 / 0.200² ≈ 5 m/s²`.
+- Spin-rate error at 0.2 m armor radius:
+  `0.100 / (0.2 * 0.200) ≈ 2.5 rad/s`, or about 0.5 m/s at the panel.
+
+The spin figure is the small-angle equivalent (the exact chord reaches 100 mm
+at about 2.53 rad/s); simultaneous errors combine geometrically. **100 mm exceeds
+a small panel's 67.5 mm half-width: the MCB's held model can be off the panel
+until the resend arrives. The user accepts this tradeoff.**
+Match panel identities geometrically across tracker panel
 handoffs; compare the four-panel model, not an arbitrary `k=0` label. If the MCB
 adopts Singer decay, update this comparison to match. Reset the comparison
 baseline only when emitting a frame; do not compare against the previous
@@ -246,8 +262,8 @@ released track id for diagnostics, and stamp the clear decision when created.
 On receipt, `clear` unconditionally releases the held assignment, regardless of
 track id or other model fields. It cancels unissued shot requests and resets
 planner state. A frame with both bits clear cannot assign a target, refresh its
-link deadline or stand in for a clear. Never send unconverged states to the MCB
-for the old measured-panel fallback. The fallback behavior above is retired.
+link deadline or stand in for a clear. Never send unassigned raw estimates to
+the MCB for the old measured-panel fallback. The fallback behavior above is retired.
 
 Assignments/updates carry `header.stamp` for when the model is true and the
 original contributing `detection_stamp`. Copy these stamps unchanged through the
