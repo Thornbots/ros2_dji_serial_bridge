@@ -55,7 +55,7 @@ struct TargetState
   Point panel{10.0, 11.0, 12.0};
   float yaw{0.25F}, yaw_rate{-0.75F};
   std::array<float, 2> radius{0.2F, 0.3F}, z_offset{0.0F, 0.05F};
-  bool valid{true}, type_c_based_patrol{true};
+  bool valid{true}, type_c_based_patrol{true}, clear{false};
 };
 }  // namespace dji_serial_bridge::msg
 
@@ -203,16 +203,18 @@ static void test_target_state()
   assert(emitted[4] == calculateCRC8(emitted.data(), CRC8_COVERAGE));
   assert(bridge.target_state_msgs_tx_ == 1);
 
-  // Flags: valid and patrol are independent bits.
-  for (int bits = 0; bits < 4; ++bits) {
+  // Flags are independent; clear takes precedence on the receiver.
+  for (int bits = 0; bits < 8; ++bits) {
     reset();
     msg->valid = (bits & 1) != 0;
     msg->type_c_based_patrol = (bits & 2) != 0;
+    msg->clear = (bits & 4) != 0;
     bridge.target_state_callback(msg);
     assert(writes == 1 && emitted[7 + 79] == bits);
   }
   msg->valid = true;
   msg->type_c_based_patrol = true;
+  msg->clear = false;
 
   // Yaw wrap, confidence clamp and track id truncation on the wire.
   reset();
@@ -260,6 +262,25 @@ static void test_target_state()
     assert(writes == 0);
   }
   msg->detection_stamp = {1, 20000000U};
+
+  // Clear uses only fresh decision time; missing/bad detection and geometry are ignored.
+  msg->clear = true;
+  msg->valid = false;
+  msg->center.x = NAN;
+  for (auto detection : {builtin_interfaces::msg::Time{0, 0}, {-1, 0}, {1, 1000000000U}}) {
+    msg->detection_stamp = detection;
+    for (auto stamp : {builtin_interfaces::msg::Time{1, 50000000U}, {0, 900000000U},
+        {1, 100000001U}, {0, 0}})
+    {
+      reset(); msg->header.stamp = stamp;
+      bridge.target_state_callback(msg);
+      const bool fresh = stamp.sec == 1 && stamp.nanosec == 50000000U;
+      assert(writes == (fresh ? 1 : 0));
+      if (fresh) {assert(u16_at(74) == 0 && emitted[7 + 79] == 0x06);}
+    }
+  }
+  msg->clear = false; msg->valid = true; msg->center.x = 1;
+  msg->header.stamp = {1, 50000000U}; msg->detection_stamp = {1, 20000000U};
 
   // Backlog, unreadable queue and failed writes never retry.
   reset();

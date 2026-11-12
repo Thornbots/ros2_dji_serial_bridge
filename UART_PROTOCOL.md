@@ -41,7 +41,7 @@ retransmission, acknowledgement or flow control in either direction.
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 | 6 | `DEBUG` | MCB → Jetson | opaque bytes | 0–128 | `~/debug` | `dji_serial_bridge/msg/DebugBlob` | caller-driven, best effort |
-| 7  | `TARGET_STATE` | Jetson → MCB | `TargetStatePayload` | 80 | `~/target_state` | `dji_serial_bridge/msg/TargetState` | per tracker update |
+| 7  | `TARGET_STATE` | Jetson → MCB | `TargetStatePayload` | 80 | `~/target_state` | `dji_serial_bridge/msg/TargetState` | managed events + 5 Hz refresh |
 
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs 0-7 match `enum UartMessage` in the firmware's
@@ -154,7 +154,7 @@ TARGET_STATE. Freshness: [Jetson → MCB freshness](#jetson--mcb-freshness).
 
 80-byte payload, 89-byte frame (7.7 ms at 115200 baud). Subscribed on
 `~/target_state` (`dji_serial_bridge/msg/TargetState`, SensorDataQoS,
-best-effort); one frame per tracker update, no Jetson timer.
+best-effort); one frame per manager assign, update, refresh or clear.
 
 | Off | Size | Type      | Field              | From                                   |
 |-----|------|-----------|--------------------|----------------------------------------|
@@ -170,38 +170,30 @@ best-effort); one frame per tracker update, no Jetson timer.
 | 74  | 2    | uint16    | `detection_age_ms` | write time − `detection_stamp`         |
 | 76  | 2    | uint16    | `track_id`         | low 16 bits of `robot_track_id`        |
 | 78  | 1    | uint8     | `confidence`       | `round(confidence × 255)`, clamped     |
-| 79  | 1    | uint8     | `flags`            | bit 0 `valid`, bit 1 `type_c_based_patrol`; 2-7 reserved 0 |
+| 79  | 1    | uint8     | `flags`            | bit 0 `valid`, bit 1 `type_c_based_patrol`, bit 2 `clear`; 3-7 reserved 0 |
 
 Vectors are x, y, z in raw aim `odom` at the state's stamp; the armor model
 (panel k at `center + radius[k % 2]·(cos(yaw + k·pi/2), sin(yaw + k·pi/2), 0)
-+ (0, 0, z_offset[k % 2])`) is `TargetState.msg`'s. `valid` clear means
-unconverged: the MCB aims at `panel` without leading or firing.
-
-The MCB owns everything after tracking: state propagation, spin
-classification, panel choice, lead, spin shot windows, fire lock, confidence
-and detection-age gates, and shot timing. Its ages are the wire ages plus time
-since receipt; uncorrected wire and USB latency (about 8 ms for this frame)
-make them slightly young. A held state aims until `state_age` reaches the
-target timeout (0.5 s); firing additionally requires `detection_age` at most
-0.15 s. Tuned values and the planner are in
-[MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
-While it holds a target state the MCB makes no hit turn.
++ (0, 0, z_offset[k % 2])`) is `TargetState.msg`'s. The MCB owns continuous
+chase, panel choice, ballistics, alignment and shot timing. There is no measured-panel
+fallback for unassigned frames. See [assignment and release](#target-assignment-update-and-clear)
+and [MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
+While it holds an assignment the MCB makes no hit turn.
 
 The bridge sets both ages at the final write boundary
 ([freshness](#jetson--mcb-freshness)), saturating at 65535 ms; it clamps
 `confidence` and wraps `yaw` but otherwise copies fields.
 
-#### Proposed target assignment, update and clear
+<a id="proposed-target-assignment-update-and-clear"></a>
 
-**Design for review; not implemented.** This replaces the per-detection handoff
-above when the coordinated firmware, bridge, Jetson and sim change lands on
-`nightly`. The payload stays 80 bytes (id 7); its flag semantics change. Reflash
+#### Target assignment, update and clear
+
+The payload is 80 bytes (id 7), with explicit assignment/release flags. Reflash
 the MCB with matching Jetson packages and update the sim MCB emulator/stand-in
-together. There is only one current protocol after rollout, with no old-format
-fallback or legacy flag negotiation. Equal payload sizes cannot detect a
-semantic mismatch.
+together. There is one current protocol, with no old-format fallback or flag
+negotiation. Equal payload sizes cannot detect a semantic mismatch.
 
-The Jetson [target manager](../thornbots_pkg/README.md#target_manager-proposed)
+The Jetson [target manager](../thornbots_pkg/README.md#target_manager)
 owns these decisions; the bridge translates one manager message to one frame.
 Tracking still incorporates every selected-robot detection. Suppressing UART
 updates does not suppress estimator updates.
@@ -247,7 +239,7 @@ adopts Singer decay, update this comparison to match. Reset the comparison
 baseline only when emitting a frame; do not compare against the previous
 detector update. No UART acknowledgement/retry mechanism is added.
 
-Proposed flags at offset 79:
+Flags at offset 79:
 
 | Bit | Meaning |
 | --- | --- |
@@ -256,14 +248,13 @@ Proposed flags at offset 79:
 | 2 | `clear`: explicit release of the held target; takes precedence over `valid` |
 | 3–7 | Reserved, sent as zero |
 
-Add an explicit ROS `clear` field; it is independent of `valid`. A normal clear
+The explicit ROS `clear` field is independent of `valid`. A normal clear
 sets `clear=true`, `valid=false`; zero model/confidence fields, retain the
 released track id for diagnostics, and stamp the clear decision when created.
 On receipt, `clear` unconditionally releases the held assignment, regardless of
 track id or other model fields. It cancels unissued shot requests and resets
 planner state. A frame with both bits clear cannot assign a target, refresh its
-link deadline or stand in for a clear. Never send unassigned raw estimates to
-the MCB for the old measured-panel fallback. The fallback behavior above is retired.
+link deadline or stand in for a clear. Unassigned raw estimates never reach the MCB; no measured-panel fallback exists.
 
 Assignments/updates carry `header.stamp` for when the model is true and the
 original contributing `detection_stamp`. Copy these stamps unchanged through the
@@ -288,7 +279,7 @@ owns the state machine, shot windows, alignment gate and ballistics.
 ### Jetson → MCB freshness
 
 The bridge drops a CV_TARGET or TARGET_STATE unless its stamp (CVTarget's
-decision stamp; TargetState's `header.stamp`) is nonzero, well formed and
+decision stamp; TargetState's model or clear-decision `header.stamp`) is nonzero, well formed and
 less than 200 ms old at the final write boundary. Exactly 200 ms is expired.
 No payload field is rewritten except TARGET_STATE's ages, and expiry sends
 no replacement. Firmware receipt expiry still applies.

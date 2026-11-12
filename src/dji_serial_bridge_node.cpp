@@ -646,9 +646,10 @@ private:
           decision_stamp->sec, decision_stamp->nanosec, now_ns, &state_age_ns) &&
           state_age_ns < 200000000LL;
         if (ok && msg_type == McbMsgType::TARGET_STATE) {
-          ok = detection_stamp != nullptr && payload_len == sizeof(TargetStatePayload) &&
-            dji_bridge::stamp_age_ns(
-            detection_stamp->sec, detection_stamp->nanosec, now_ns, &detection_age_ns);
+          ok = payload_len == sizeof(TargetStatePayload);
+          const bool clear = ok && (payload[offsetof(TargetStatePayload, flags)] & 0x04) != 0;
+          ok = ok && (clear || (detection_stamp != nullptr && dji_bridge::stamp_age_ns(
+            detection_stamp->sec, detection_stamp->nanosec, now_ns, &detection_age_ns)));
           if (ok) {
             const uint16_t ages[2] = {
               dji_bridge::age_ms_saturated(state_age_ns),
