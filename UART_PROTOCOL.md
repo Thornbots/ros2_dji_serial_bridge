@@ -142,7 +142,7 @@ The Jetson sends idle points only while it holds no target state younger than
 its target timeout. Idle looks can hold the last enemy position, follow the gun
 after a firmware hit turn, check a lidar track or face the enemy starting zone;
 their selection belongs to `thornbots_pkg` (see the
-[lidar-guided aiming design](../docs/lidar-guided-aiming-2026-10-25.md#where-the-head-looks-with-no-camera-target)).
+[lidar-guided aiming design](../docs/lidar-guided-aiming-2026-10-25.html#where-the-head-looks-with-no-camera-target)).
 The MCB holds an idle point for its 200 ms validity, behind any held target
 state; bits 1 and 2 separately permit firmware patrol after expiry and
 interruption toward a hit.
