@@ -191,6 +191,84 @@ The bridge sets both ages at the final write boundary
 ([freshness](#jetson--mcb-freshness)), saturating at 65535 ms; it clamps
 `confidence` and wraps `yaw` but otherwise copies fields.
 
+#### Proposed target assignment, update and clear
+
+**Design for review; not implemented.** This replaces the per-detection handoff
+above when the coordinated firmware, bridge, Jetson and sim change lands on
+`nightly`. The payload stays 80 bytes (id 7); its flag semantics change. Reflash
+the MCB with matching Jetson packages and update the sim MCB emulator/stand-in
+together. There is only one current protocol after rollout, with no old-format
+fallback or legacy flag negotiation. Equal payload sizes cannot detect a
+semantic mismatch.
+
+The Jetson [target manager](../thornbots_pkg/README.md#target_manager-proposed)
+owns these decisions; the bridge translates one manager message to one frame.
+Tracking still incorporates every selected-robot detection. Suppressing UART
+updates does not suppress estimator updates.
+
+| Event | Send rule |
+| --- | --- |
+| Assign | Send immediately once the selected track has the minimum successful update count and finite position, velocity and spin-rate variances within their limits. No time-based dwell. |
+| Update | Send immediately for a new confident track id or model drift beyond tolerance; otherwise refresh the confident assigned track at 5 Hz. |
+| Clear | Send immediately on loss of assignment confidence or explicit loss of the selected track. Clear the previous assignment before waiting for a replacement to converge. |
+
+Proposed initial review values are five contributing detection batches for one
+robot track, each position variance at most `0.01 m²`, each velocity variance at
+most `0.25 (m/s)²`, and spin-rate variance at most `1.0 (rad/s)²`. Count actual
+measurement updates, not predictions/timer ticks, and do not reset on panel
+handoffs within one robot. These are tuning proposals to validate with the
+estimation/aiming benches, not detector-confidence thresholds. Implementation
+defaults will live in source declarations.
+
+For drift, propagate the last model sent using the MCB's constant-acceleration,
+rigid-spin model, starting at its carried state stamp. Compare it with the current
+estimate at the same time in raw aim `odom`. The proposed tolerance is 20 mm:
+take the maximum center or corresponding-panel position difference both now and
+200 ms ahead, so velocity, acceleration and spin disagreement can also trigger
+an early update. Match panel identities geometrically across tracker panel
+handoffs; compare the four-panel model, not an arbitrary `k=0` label. If the MCB
+adopts Singer decay, update this comparison to match. Reset the comparison
+baseline only when emitting a frame; do not compare against the previous
+detector update. No UART acknowledgement/retry mechanism is added.
+
+Proposed flags at offset 79:
+
+| Bit | Meaning |
+| --- | --- |
+| 0 | `valid`: an assigned, confident model; set on assign, update and refresh |
+| 1 | `type_c_based_patrol`: existing firmware patrol permission |
+| 2 | `clear`: explicit release of the held target; takes precedence over `valid` |
+| 3–7 | Reserved, sent as zero |
+
+Add an explicit ROS `clear` field; it is independent of `valid`. A normal clear
+sets `clear=true`, `valid=false`; zero model/confidence fields, retain the
+released track id for diagnostics, and stamp the clear decision when created.
+On receipt, `clear` unconditionally releases the held assignment, regardless of
+track id or other model fields. It cancels unissued shot requests and resets
+planner state. A frame with both bits clear cannot assign a target, refresh its
+link deadline or stand in for a clear. Never send unconverged states to the MCB
+for the old measured-panel fallback. The fallback behavior above is retired.
+
+Assignments/updates carry `header.stamp` for when the model is true and the
+original contributing `detection_stamp`. Copy these stamps unchanged through the
+manager/relay unless the manager actually predicts the model to a new state time;
+such prediction must carry covariance forward too. A refresh cannot restamp old
+data and claim a new detection. The bridge computes ages at the write boundary;
+it does not decide confidence, propagate the model or create clears on expiry.
+Clear is a newly created decision, so its fresh header uses decision time and
+its detection age is zero and ignored. Apply the existing header freshness check to
+clears too, without requiring a detection stamp or usable target geometry.
+
+In TRACKING AND SHOOTING, the MCB propagates from `state_age_ms` plus elapsed
+receipt time. Separately, **0.6 s without an accepted assigned-model frame**
+(three missed 5 Hz refreshes) releases the target to WAITING FOR TARGET.
+Exactly 0.6 s is expired. This deadline uses only elapsed receipt time on the
+MCB's wrap-safe clock, not state age or detection age. Clear releases immediately;
+CV_TARGET and nonassigned/malformed frames cannot extend the deadline.
+The `confidence` and `detection_age_ms` fields remain diagnostic and are not
+MCB fire gates. The [MCBV3 planner design](../firmware/MCBV3/README.md#target-handoff-redesign-proposed-review-before-implementation)
+owns the state machine, shot windows, alignment gate and ballistics.
+
 ### Jetson → MCB freshness
 
 The bridge drops a CV_TARGET or TARGET_STATE unless its stamp (CVTarget's
