@@ -55,7 +55,8 @@ sends nine POSE then one REF_SYS on one 10 ms timer.
 z up, x toward blue's base, y left. Raw POSE/CV_TARGET coordinates boot at
 (0, 0) for both teams and remain relative to that physical start. Navigation
 coordinates become field-centred after the Jetson's startup RELOCALIZE:
-the position comes from that team's Jetson launch configuration, not firmware.
+the position comes from the Jetson's absolute field localization. Its prior
+comes from that team's launch configuration, not firmware.
 `thornbots_pkg/auto.launch.py` owns `red_start_x`, `red_start_y`, `blue_start_x`,
 `blue_start_y` defaults; `/etc/thornbots/launch.env` can override each independently
 through `AUTO_LAUNCH_ARGS` ([configuration](../thornbots_pkg/README.md#point_to_cv_target)).
@@ -67,10 +68,12 @@ publishes its zero placeholder (see [proposed chassis yaw](#proposed-pose-chassi
 POSE and CV_TARGET use continuous raw pod odometry (`odom` on the Jetson),
 which RELOCALIZE and team selection never move.
 NAV_GOAL and RELOCALIZE use the
-corrected navigation frame (`nav_odom` on the Jetson). RELOCALIZE changes
+absolute field frame (`map` on the Jetson with AMCL/saved-map localization;
+team-start `nav_odom` in mapping/odometry-only mode). RELOCALIZE changes
 only the MCB's navigation offset; it cannot move POSE or an existing aim
-point. Navigation offsets are translation-only; these frames keep the same
-axes. MCB navigation is initially start-relative; autonomous routes and
+point. Navigation offsets are translation-only; firmware keeps raw field-aligned
+axes between fixes. A yaw in `map->nav_odom` rotates the Jetson's displacement
+prediction before sending x/y; it never rotates firmware odometry or aim axes. MCB navigation is initially start-relative; autonomous routes and
 NAV_GOAL driving wait for the first RELOCALIZE. The Jetson waits for the
 referee team, seeds navigation at raw position plus that team's start, and
 sends the absolute navigation position. AMCL also waits for that team before
@@ -109,9 +112,9 @@ header are discarded.
 | 0   | 4    | float32 | `x`       | `point.x` |
 | 4   | 4    | float32 | `y`       | `point.y` |
 
-A goal in the corrected navigation frame, metres, consumed by its autonomous
-drive controller only after its first RELOCALIZE. No publisher in this workspace: `mcb_relay` wires up
-`~/cv_target`, `~/target_state` and `~/relocalize` only.
+An absolute field goal in metres, consumed by the autonomous drive controller
+only after its first RELOCALIZE. `thornbots_nav/waypoint_nav` publishes it and
+judges arrival using the relay's nominal held-navigation estimate.
 
 ### CV_TARGET (id=1) — idle look point
 
@@ -225,15 +228,18 @@ header are discarded.
 | 0   | 4    | float32 | `x`         | `point.x` |
 | 4   | 4    | float32 | `y`         | `point.y` |
 
-The localization-estimated position in corrected navigation `nav_odom`, metres.
-The MCB sets its navigation offset against its current raw pod position.
-Navigation controllers see this correction; raw POSE and gimbal aim do not.
-The first accepted fix enables autonomous navigation. To tolerate a lost frame
-in the single receive slot, `mcb_relay` repeats each correction three times
-after its first send, at least 0.3 s apart, using fresh localization/raw inputs
-and the same confidence gate. These are newly predicted absolute positions,
-not cumulative deltas. The bounded repeats do not prove receipt if all four
-frames are lost; there is no acknowledgement in this payload.
+The localization-estimated **absolute field position** in metres, predicted
+to firmware application time: AMCL-corrected `map` pose for normal operation,
+team-start `nav_odom` pose while mapping or without a global map. The MCB
+replaces its navigation offset against current raw pod position; it never adds
+a correction delta. Navigation controllers see the new position; raw POSE and
+gimbal aim do not. The first accepted fix enables autonomous navigation.
+The relay applies covariance/freshness, startup, jump and step gates, then
+repeats fixes using fresh inputs to tolerate lost frames. The AMCL policy also
+refreshes valid fixes periodically. No wire acknowledgement proves receipt.
+The maintained [relay policy](../thornbots_pkg/README.md#mcb_relay) owns the
+thresholds and timing estimates. Payload fields and firmware interpretation
+are unchanged.
 The node logs every transmission beside the latest raw `~/pose`; those
 coordinates are in different frames after a correction.
 
