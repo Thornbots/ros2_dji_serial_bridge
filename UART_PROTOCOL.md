@@ -204,6 +204,11 @@ updates does not suppress estimator updates.
 | Update | Send immediately for a new confident track id or model drift beyond tolerance; otherwise refresh the confident assigned track at 5 Hz. |
 | Clear | Send immediately when propagated YOLO confidence reaches the lower clear threshold or the selected track is explicitly retired/reset. Clear the previous assignment before waiting for a replacement to qualify. |
 
+For a position-filter reacquisition of the same track id, send a clear before
+the new assignment so the receiver resets its planner even when the id is unchanged.
+The manager requires positive radii; the receiver accepts finite non-negative
+radii to validate frames independently.
+
 Assignment confidence is the selected robot's propagated YOLO detection score,
 as defined at its [tracker/manager implementation home](../thornbots_pkg/README.md#propagated-yolo-confidence).
 Use an assign threshold of **0.60** and a lower clear threshold of **0.40** as
@@ -272,6 +277,8 @@ receipt time. Separately, **0.6 s without an accepted assigned-model frame**
 Exactly 0.6 s is expired. This deadline uses only elapsed receipt time on the
 MCB's wrap-safe clock, not state age or detection age. Clear releases immediately;
 CV_TARGET and nonassigned/malformed frames cannot extend the deadline.
+A malformed assignment leaves the last accepted model in place until clear or
+expiry; it does not refresh that model's receipt deadline.
 The `confidence` and `detection_age_ms` fields remain diagnostic and are not
 MCB fire gates. The [MCBV3 planner design](../firmware/MCBV3/README.md#mcbv3-aiming-planner)
 owns the state machine, shot windows, alignment gate and ballistics.
