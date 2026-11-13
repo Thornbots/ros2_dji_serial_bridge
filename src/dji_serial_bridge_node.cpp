@@ -1134,8 +1134,8 @@ private:
   // Subscriber callbacks  (Jetson → MCB)
   // ═══════════════════════════════════════════════════════════════════════
 
-  // Coordinated simulation only: after the frame is written or dropped, publish its
-  // decision stamp (now() for frames without one) so a chain can wait for the PTY write.
+  // Coordinated simulation only: echo the decision stamp after write/drop or queue
+  // handoff. With sim_tx_queue, sim_tx_flushed separately marks batch processing.
   void tx_ack(const char * name, const builtin_interfaces::msg::Time * stamp)
   {
     if (!coordinated_) {return;}
