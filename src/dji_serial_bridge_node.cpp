@@ -646,9 +646,10 @@ private:
           decision_stamp->sec, decision_stamp->nanosec, now_ns, &state_age_ns) &&
           state_age_ns < 200000000LL;
         if (ok && msg_type == McbMsgType::TARGET_STATE) {
-          ok = detection_stamp != nullptr && payload_len == sizeof(TargetStatePayload) &&
-            dji_bridge::stamp_age_ns(
-            detection_stamp->sec, detection_stamp->nanosec, now_ns, &detection_age_ns);
+          ok = payload_len == sizeof(TargetStatePayload);
+          const bool clear = ok && (payload[offsetof(TargetStatePayload, flags)] & 0x04) != 0;
+          ok = ok && (clear || (detection_stamp != nullptr && dji_bridge::stamp_age_ns(
+            detection_stamp->sec, detection_stamp->nanosec, now_ns, &detection_age_ns)));
           if (ok) {
             const uint16_t ages[2] = {
               dji_bridge::age_ms_saturated(state_age_ns),
@@ -1133,8 +1134,8 @@ private:
   // Subscriber callbacks  (Jetson → MCB)
   // ═══════════════════════════════════════════════════════════════════════
 
-  // Coordinated simulation only: after the frame is written or dropped, publish its
-  // decision stamp (now() for frames without one) so a chain can wait for the PTY write.
+  // Coordinated simulation only: echo the decision stamp after write/drop or queue
+  // handoff. With sim_tx_queue, sim_tx_flushed separately marks batch processing.
   void tx_ack(const char * name, const builtin_interfaces::msg::Time * stamp)
   {
     if (!coordinated_) {return;}
