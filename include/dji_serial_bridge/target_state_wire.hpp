@@ -75,7 +75,8 @@ inline TargetStatePayload pack_target_state(const Msg & m)
   p.panel[2] = static_cast<float>(m.panel.z);
   p.track_id = static_cast<uint16_t>(m.robot_track_id & 0xFFFFu);
   p.confidence = confidence_to_u8(m.confidence);
-  p.flags = static_cast<uint8_t>((m.valid ? 0x01 : 0x00) | (m.type_c_based_patrol ? 0x02 : 0x00));
+  p.flags = static_cast<uint8_t>((m.valid ? 0x01 : 0x00) |
+    (m.type_c_based_patrol ? 0x02 : 0x00) | (m.clear ? 0x04 : 0x00));
   return p;
 }
 }  // namespace dji_bridge

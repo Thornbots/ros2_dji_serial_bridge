@@ -41,7 +41,7 @@ retransmission, acknowledgement or flow control in either direction.
 | 4  | `RELOCALIZE` | Jetson → MCB  | `RelocalizePayload` | 8     | `~/relocalize` | `geometry_msgs/msg/PointStamped`     | on correction |
 | 5  | `PING`       | both          | `PingPayload`       | 1     | `~/ping_to_mcb`, `~/ping_from_mcb` | `dji_serial_bridge/msg/Ping` | on publish / on echo |
 | 6 | `DEBUG` | MCB → Jetson | opaque bytes | 0–128 | `~/debug` | `dji_serial_bridge/msg/DebugBlob` | caller-driven, best effort |
-| 7  | `TARGET_STATE` | Jetson → MCB | `TargetStatePayload` | 80 | `~/target_state` | `dji_serial_bridge/msg/TargetState` | per tracker update |
+| 7  | `TARGET_STATE` | Jetson → MCB | `TargetStatePayload` | 80 | `~/target_state` | `dji_serial_bridge/msg/TargetState` | managed events + 5 Hz refresh |
 
 Each message is named after its topic, and its payload fields after the ROS
 fields they carry. IDs 0-7 match `enum UartMessage` in the firmware's
@@ -154,7 +154,7 @@ TARGET_STATE. Freshness: [Jetson → MCB freshness](#jetson--mcb-freshness).
 
 80-byte payload, 89-byte frame (7.7 ms at 115200 baud). Subscribed on
 `~/target_state` (`dji_serial_bridge/msg/TargetState`, SensorDataQoS,
-best-effort); one frame per tracker update, no Jetson timer.
+best-effort); one frame per manager assign, update, refresh or clear.
 
 | Off | Size | Type      | Field              | From                                   |
 |-----|------|-----------|--------------------|----------------------------------------|
@@ -170,31 +170,123 @@ best-effort); one frame per tracker update, no Jetson timer.
 | 74  | 2    | uint16    | `detection_age_ms` | write time − `detection_stamp`         |
 | 76  | 2    | uint16    | `track_id`         | low 16 bits of `robot_track_id`        |
 | 78  | 1    | uint8     | `confidence`       | `round(confidence × 255)`, clamped     |
-| 79  | 1    | uint8     | `flags`            | bit 0 `valid`, bit 1 `type_c_based_patrol`; 2-7 reserved 0 |
+| 79  | 1    | uint8     | `flags`            | bit 0 `valid`, bit 1 `type_c_based_patrol`, bit 2 `clear`; 3-7 reserved 0 |
 
 Vectors are x, y, z in raw aim `odom` at the state's stamp; the armor model
 (panel k at `center + radius[k % 2]·(cos(yaw + k·pi/2), sin(yaw + k·pi/2), 0)
-+ (0, 0, z_offset[k % 2])`) is `TargetState.msg`'s. `valid` clear means
-unconverged: the MCB aims at `panel` without leading or firing.
-
-The MCB owns everything after tracking: state propagation, spin
-classification, panel choice, lead, spin shot windows, fire lock, confidence
-and detection-age gates, and shot timing. Its ages are the wire ages plus time
-since receipt; uncorrected wire and USB latency (about 8 ms for this frame)
-make them slightly young. A held state aims until `state_age` reaches the
-target timeout (0.5 s); firing additionally requires `detection_age` at most
-0.15 s. Tuned values and the planner are in
-[MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
-While it holds a target state the MCB makes no hit turn.
++ (0, 0, z_offset[k % 2])`) is `TargetState.msg`'s. The MCB owns continuous
+chase, panel choice, ballistics, alignment and shot timing. There is no measured-panel
+fallback for unassigned frames. See [assignment and release](#target-assignment-update-and-clear)
+and [MCBV3 aiming](../firmware/MCBV3/README.md#aim-and-navigation-odometry).
+While it holds an assignment the MCB makes no hit turn.
 
 The bridge sets both ages at the final write boundary
 ([freshness](#jetson--mcb-freshness)), saturating at 65535 ms; it clamps
 `confidence` and wraps `yaw` but otherwise copies fields.
 
+<a id="proposed-target-assignment-update-and-clear"></a>
+
+#### Target assignment, update and clear
+
+The payload is 80 bytes (id 7), with explicit assignment/release flags. Reflash
+the MCB with matching Jetson packages and update the sim MCB emulator/stand-in
+together. There is one current protocol, with no old-format fallback or flag
+negotiation. Equal payload sizes cannot detect a semantic mismatch.
+
+The Jetson [target manager](../thornbots_pkg/README.md#target_manager)
+owns these decisions; the bridge translates one manager message to one frame.
+Tracking still incorporates every selected-robot detection. Suppressing UART
+updates does not suppress estimator updates.
+
+| Event | Send rule |
+| --- | --- |
+| Assign | Send immediately when the selected track's propagated YOLO confidence reaches the assign threshold and its model passes finite-data sanity checks. No update-count, variance-limit or time-based dwell requirement. |
+| Update | Send immediately for a new confident track id or model drift beyond tolerance; otherwise refresh the confident assigned track at 5 Hz. |
+| Clear | Send immediately when propagated YOLO confidence reaches the lower clear threshold or the selected track is explicitly retired/reset. Clear the previous assignment before waiting for a replacement to qualify. |
+
+For a position-filter reacquisition of the same track id, send a clear before
+the new assignment so the receiver resets its planner even when the id is unchanged.
+The manager requires positive radii; the receiver accepts finite non-negative
+radii to validate frames independently.
+
+Assignment confidence is the selected robot's propagated YOLO detection score,
+as defined at its [tracker/manager implementation home](../thornbots_pkg/README.md#propagated-yolo-confidence).
+Use an assign threshold of **0.60** and a lower clear threshold of **0.40** as
+initial tuning values: assign at `C >= 0.60`, clear at `C <= 0.40`, and retain
+the existing assignment between them. An unassigned track in that band stays
+unassigned. There is no EKF convergence/update-count gate or covariance magnitude
+limit. Keep a sanity check for finite model/covariance fields and nonnegative
+variance diagonals; invalid numerical state cannot be assigned and clears an
+existing assignment immediately. Finite covariance is a data-integrity check,
+not a confidence estimate. Parameter declarations belong in source; validate
+the initial YOLO thresholds and decay against recorded detections and benches.
+
+For drift, propagate the last model sent using the MCB's constant-acceleration,
+rigid-spin model, starting at its carried state stamp. Compare it with the current
+estimate at the same time in raw aim `odom`. The resend tolerance is **100 mm**:
+take the maximum center or corresponding-panel position difference both now and
+200 ms ahead, so velocity, acceleration and spin disagreement can also trigger
+an early update when the maximum exceeds 100 mm. For an otherwise matching
+model, the 200 ms comparison converts isolated errors to that displacement:
+
+- Velocity error: `0.100 / 0.200 ≈ 0.5 m/s`.
+- Acceleration error: `2 * 0.100 / 0.200² ≈ 5 m/s²`.
+- Spin-rate error at 0.2 m armor radius:
+  `0.100 / (0.2 * 0.200) ≈ 2.5 rad/s`, or about 0.5 m/s at the panel.
+
+The spin figure is the small-angle equivalent (the exact chord reaches 100 mm
+at about 2.53 rad/s); simultaneous errors combine geometrically. **100 mm exceeds
+a small panel's 67.5 mm half-width: the MCB's held model can be off the panel
+until the resend arrives. The user accepts this tradeoff.**
+Match panel identities geometrically across tracker panel
+handoffs; compare the four-panel model, not an arbitrary `k=0` label. If the MCB
+adopts Singer decay, update this comparison to match. Reset the comparison
+baseline only when emitting a frame; do not compare against the previous
+detector update. No UART acknowledgement/retry mechanism is added.
+
+Flags at offset 79:
+
+| Bit | Meaning |
+| --- | --- |
+| 0 | `valid`: an assigned, confident model; set on assign, update and refresh |
+| 1 | `type_c_based_patrol`: existing firmware patrol permission |
+| 2 | `clear`: explicit release of the held target; takes precedence over `valid` |
+| 3–7 | Reserved, sent as zero |
+
+The explicit ROS `clear` field is independent of `valid`. A normal clear
+sets `clear=true`, `valid=false`; zero model/confidence fields, retain the
+released track id for diagnostics, and stamp the clear decision when created.
+On receipt, `clear` unconditionally releases the held assignment, regardless of
+track id or other model fields. It cancels unissued shot requests and resets
+planner state. A frame with both bits clear cannot assign a target, refresh its
+link deadline or stand in for a clear. Unassigned raw estimates never reach the MCB; no measured-panel fallback exists.
+
+Assignments/updates carry `header.stamp` for when the model is true and the
+original contributing `detection_stamp`. Copy these stamps unchanged through the
+manager/relay unless the manager actually predicts the model to a new state time;
+such prediction must carry covariance forward too. A refresh cannot restamp old
+data and claim a new detection. The bridge computes ages at the write boundary;
+it does not decide confidence, propagate the model or create clears on expiry.
+Clear is a newly created decision, so its fresh header uses decision time and
+its detection age is zero and ignored. Apply the existing header freshness check to
+clears too, without requiring a detection stamp or usable target geometry.
+
+In TRACKING AND SHOOTING, the MCB propagates from `state_age_ms` plus elapsed
+receipt time. Separately, **0.6 s without an accepted assigned-model frame**
+(three missed 5 Hz refreshes) releases the target to WAITING FOR TARGET.
+Exactly 0.6 s is expired. This deadline uses only elapsed receipt time on the
+MCB's wrap-safe clock, not state age or detection age. Clear releases immediately;
+CV_TARGET and nonassigned/malformed frames cannot extend the deadline.
+A malformed assignment leaves the last accepted model in place until clear or
+expiry; it does not refresh that model's receipt deadline.
+The `confidence` and `detection_age_ms` fields remain diagnostic and are not
+MCB fire gates. The [MCBV3 planner design](../firmware/MCBV3/README.md#mcbv3-aiming-planner)
+owns the state machine, shot windows, alignment gate and ballistics.
+
 ### Jetson → MCB freshness
 
 The bridge drops a CV_TARGET or TARGET_STATE unless its stamp (CVTarget's
-decision stamp; TargetState's `header.stamp`) is nonzero, well formed and
+decision stamp; TargetState's model or clear-decision `header.stamp`) is nonzero, well formed and
 less than 200 ms old at the final write boundary. Exactly 200 ms is expired.
 No payload field is rewritten except TARGET_STATE's ages, and expiry sends
 no replacement. Firmware receipt expiry still applies.

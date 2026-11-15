@@ -250,10 +250,15 @@ In this mode the Jetson-to-MCB busy gate for CV_TARGET and TARGET_STATE replaces
 `TIOCOUTQ` with the sim-clock wire: a decision drops while an earlier frame's
 bytes (frame size x 10 / `baudrate`) are still on the wire, because the simulator
 drains the PTY only at its own steps. The robot path is unchanged.
-In this mode each Jetson-to-MCB decision, written or dropped, also publishes a reliable
-`std_msgs/Header` on `~/tx_ack/{nav_goal,cv_target,target_state,relocalize,ping}` after
-the PTY write: the message's own stamp for the first three, `now()` for the others. The
-simulator's lockstep chains wait on these so a frame reaches the PTY at a fixed step.
+In this mode each Jetson-to-MCB decision also publishes a reliable
+`std_msgs/msg/Header` on `~/tx_ack/{nav_goal,cv_target,target_state,relocalize,ping}`:
+the message's own stamp for the first three, `now()` for the others. Without
+`sim_tx_queue`, this follows the write attempt or drop. With `sim_tx_queue`, it
+acknowledges queue handoff; the coordinator sends `~/sim_tx_flush`, and the bridge
+publishes `~/sim_tx_flushed` with the hold stamp after processing that batch.
+A tx ack is not proof of successful transmission. TARGET_STATE retains its model
+stamp even when triggered by a newer detector frame; per-input pacing belongs to
+the manager's [frame acknowledgement](../thornbots_pkg/README.md#target_manager).
 This interface does not change physical UART bytes.
 
 Both pending queues hold at most 32 frames. A mismatch, unsupported frame,
