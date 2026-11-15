@@ -108,7 +108,7 @@ EKF and map localization. RELOCALIZE updates only the MCB navigation offset;
 gimbal aim subtracts raw odometry. Raw drift and UART/sample timing still
 affect aim, but navigation corrections cannot move it. The current
 shared mailbox can lose a RELOCALIZE overwritten by CV_TARGET or NAV_GOAL
-(TARGET_STATE and PING bypass it); measure that and the UART/read delays on hardware.
+(TARGET_STATE, and PING on sentry, bypass it); measure that and the UART/read delays on hardware.
 
 `root` is heading-fixed and gimbal yaw is world yaw, so the existing aim does
 not require chassis yaw. The [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw)

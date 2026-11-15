@@ -94,12 +94,14 @@ copied without clamping; CV_TARGET and TARGET_STATE have the freshness gate belo
 
 ### MCB receive
 
-TARGET_STATE (id 7) and PING (id 5) go to their own handlers and bypass the
-mailbox (`UARTCommunication::messageReceiveCallback`). Every other type
-shares one `mostRecentMessage` slot, which `getMsg` consumes only when the
-type and payload size match its caller. CV_TARGET (sent at 40 Hz even when
-idle), RELOCALIZE and NAV_GOAL contend for it: a frame received before
-consumption overwrites the previous one. There is no queue or application
+TARGET_STATE (id 7) goes to its own handler and bypasses the mailbox
+(`UARTCommunication::messageReceiveCallback`). PING (id 5) bypasses it only
+on sentry builds, the only ones that register a PING handler (`drivers.hpp`);
+elsewhere PING uses the mailbox. Every other type shares one
+`mostRecentMessage` slot, which `getMsg` consumes only when the type and
+payload size match its caller. CV_TARGET (sent at 40 Hz even when idle),
+RELOCALIZE and NAV_GOAL contend for it: a frame received before consumption
+overwrites the previous one. There is no queue or application
 acknowledgement; successful Jetson transmission does not prove that the MCB
 applied a command.
 
