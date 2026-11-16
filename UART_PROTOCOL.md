@@ -332,7 +332,9 @@ a correction delta. Navigation controllers see the new position; raw POSE and
 gimbal aim do not. The first accepted fix enables autonomous navigation.
 The relay applies covariance/freshness, startup, jump and step gates, then
 repeats fixes using fresh inputs to tolerate lost frames. The AMCL policy also
-refreshes valid fixes periodically. No wire acknowledgement proves receipt.
+refreshes valid fixes periodically. After applying a fix, the MCB sends PING 7.
+A late acknowledgement cannot identify a particular fix: PING has no sequence
+field.
 The maintained [relay policy](../thornbots_pkg/README.md#mcb_relay) owns the
 thresholds and timing estimates. Payload fields and firmware interpretation
 are unchanged.
@@ -521,6 +523,7 @@ in-stack C++ [`mmm` node](../thornbots_pkg/README.md#mcb-mapping-machine).
 | 3 | C | Save asynchronously | C→J 3, J→C 3, C→J 3, J→C 3; C ignores |
 | 4 | J | Mapping / away from start; Done→Mapping after failed Ready save | J→C 4, C→J 4, J→C 4; C echoes again, J ignores |
 | 6 | J | Setup failed | J→C 6, C→J 6, J→C 6; C echoes again, J ignores |
+| 7 | C | RELOCALIZE applied | C→J 7 only; J never sends or echoes 7 |
 
 Only C owns the states. Main --1--> Setup mapping --2--> Ready to save;
 Ready to save --4--> Mapping --2--> Ready to save. Ready to save --3--> Done;
@@ -532,6 +535,9 @@ drive cap. Done disables drive and permits power-off, with no head-down pose.
 C replies to 0 only in Main;
 it ignores 0 elsewhere. Zero is the one exception to always-ack by prior user
 decision and never changes state. Unknown numbers are ignored, never echoed.
+After applying RELOCALIZE, C waits up to 100 ms for an idle UART to send 7; a
+failed or partial write is not retried. Pending acknowledgements coalesce if
+another fix is applied while waiting.
 
 J publishes 0 once per wall second. Even transactions allow one outstanding
 number, retry every 0.5 wall seconds, and stop after ten sends (timeout at
