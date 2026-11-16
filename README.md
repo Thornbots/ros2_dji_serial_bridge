@@ -82,9 +82,9 @@ Paths below are under `MCB-project/src/` in MCBV3.
   one-cycle event used by auto-aim/UI. A report uses the current chassis
   heading; the next report carries 123 unless another hit occurred.
   Physical hit direction remains unvalidated.
-- The UART receiver has one mailbox slot: a later frame can overwrite an
-  unread RELOCALIZE (`communication/UARTCommunication.cpp`). Measure loss
-  with CV_TARGET and TARGET_STATE traffic before relying on corrections while moving.
+- The UART receiver's one mailbox slot is shared by CV_TARGET, RELOCALIZE and NAV_GOAL, so a later frame
+  can overwrite an unread RELOCALIZE ([MCB receive](UART_PROTOCOL.md#mcb-receive)). Measure loss
+  under CV_TARGET traffic before relying on corrections while moving.
 - The normal sentry switch schedules the NAV_GOAL reader `AutoDriveCommand`
   (`robots/sentry/SentryControl.hpp`); the firmware keeps no route.
   `thornbots_nav`'s `waypoint_nav` publishes the goals.
@@ -107,8 +107,8 @@ Jetson camera/target/aim transforms use raw MCB POSE, independently of the
 EKF and map localization. RELOCALIZE updates only the MCB navigation offset;
 gimbal aim subtracts raw odometry. Raw drift and UART/sample timing still
 affect aim, but navigation corrections cannot move it. The current
-1 ms mailbox can lose a RELOCALIZE arriving alongside TARGET_STATE or
-CV_TARGET; measure that and the UART/read delays on hardware.
+shared mailbox can lose a RELOCALIZE overwritten by CV_TARGET or NAV_GOAL
+(TARGET_STATE, and PING on sentry, bypass it); measure that and the UART/read delays on hardware.
 
 `root` is heading-fixed and gimbal yaw is world yaw, so the existing aim does
 not require chassis yaw. The [POSE chassis-yaw proposal](UART_PROTOCOL.md#proposed-pose-chassis-yaw)
