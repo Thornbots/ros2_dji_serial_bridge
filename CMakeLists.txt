@@ -29,6 +29,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/CVTarget.msg"
   "msg/PanelDetection.msg"
   "msg/PanelDetectionArray.msg"
+  "msg/ArmorKeypoints.msg"
+  "msg/ArmorKeypointsArray.msg"
   "msg/TargetState.msg"
   "msg/Ping.msg"
   "msg/DebugBlob.msg"
