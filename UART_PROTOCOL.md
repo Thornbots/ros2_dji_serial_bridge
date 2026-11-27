@@ -275,8 +275,9 @@ Clear is a newly created decision, so its fresh header uses decision time and
 its detection age is zero and ignored. Apply the existing header freshness check to
 clears too, without requiring a detection stamp or usable target geometry.
 
-In TRACKING AND SHOOTING, the MCB propagates from `state_age_ms` plus elapsed
-receipt time. Separately, **0.6 s without an accepted assigned-model frame**
+In TRACKING AND SHOOTING, the MCB propagates from `state_age_ms` plus the
+frame's 7.7 ms airtime (the age is written before the first byte, receipt is
+stamped after the last) plus elapsed receipt time. Separately, **0.6 s without an accepted assigned-model frame**
 (three missed 5 Hz refreshes) releases the target to WAITING FOR TARGET.
 Exactly 0.6 s is expired. This deadline uses only elapsed receipt time on the
 MCB's wrap-safe clock, not state age or detection age. Clear releases immediately;
