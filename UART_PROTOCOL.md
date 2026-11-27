@@ -368,7 +368,7 @@ uses verified side-channel capture stamps instead; the UART frame is unchanged.
 | 4   | 4    | float32 | `y`          | chassis Y, raw aim odom, metres          |
 | 8   | 4    | float32 | `vel_x`      | chassis X velocity, m/s                  |
 | 12  | 4    | float32 | `vel_y`      | chassis Y velocity, m/s                  |
-| 16  | 4    | float32 | `head_pitch` | gimbal pitch encoder value, radians      |
+| 16  | 4    | float32 | `head_pitch` | gimbal pitch, radians: sentry world aim pitch ([base tilt](../firmware/MCBV3/README.md#base-tilt)), others encoder |
 | 20  | 4    | float32 | `head_yaw`   | gimbal yaw, field, CCW, `(-2pi, 2pi)`, rad  |
 | 24  | 1    | uint8   | `odom_status`| which source produced x/y/vel, below     |
 
