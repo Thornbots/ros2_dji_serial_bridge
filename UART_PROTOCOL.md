@@ -227,21 +227,22 @@ the initial YOLO thresholds and decay against recorded detections and benches.
 
 For drift, propagate the last model sent using the MCB's constant-acceleration,
 rigid-spin model, starting at its carried state stamp. Compare it with the current
-estimate at the same time in raw aim `odom`. The resend tolerance is **100 mm**:
+estimate at the same time in raw aim `odom`. The resend tolerance is **20 mm**:
 take the maximum center or corresponding-panel position difference both now and
 200 ms ahead, so velocity, acceleration and spin disagreement can also trigger
-an early update when the maximum exceeds 100 mm. For an otherwise matching
+an early update when the maximum exceeds 20 mm. For an otherwise matching
 model, the 200 ms comparison converts isolated errors to that displacement:
 
-- Velocity error: `0.100 / 0.200 ≈ 0.5 m/s`.
-- Acceleration error: `2 * 0.100 / 0.200² ≈ 5 m/s²`.
+- Velocity error: `0.020 / 0.200 = 0.1 m/s`.
+- Acceleration error: `2 * 0.020 / 0.200² = 1 m/s²`.
 - Spin-rate error at 0.2 m armor radius:
-  `0.100 / (0.2 * 0.200) ≈ 2.5 rad/s`, or about 0.5 m/s at the panel.
+  `0.020 / (0.2 * 0.200) = 0.5 rad/s`, or about 0.1 m/s at the panel.
 
-The spin figure is the small-angle equivalent (the exact chord reaches 100 mm
-at about 2.53 rad/s); simultaneous errors combine geometrically. **100 mm exceeds
-a small panel's 67.5 mm half-width: the MCB's held model can be off the panel
-until the resend arrives. The user accepts this tradeoff.**
+With detector noise this sends on most detector frames (about 60 Hz, 89-byte
+frames: roughly half of the 115200 baud Jetson → MCB link). The former 100 mm
+tolerance let the MCB's held model sit off a 67.5 mm panel half-width; in sim
+`mcb_match` the gimbal chased a staircase of ~7 cm aim-point jumps every ~50 ms
+while driving ([measurements](../docs/investigations/drive-gimbal-tracking-2026-11-28.md)).
 Match panel identities geometrically across tracker panel
 handoffs; compare the four-panel model, not an arbitrary `k=0` label. If the MCB
 adopts Singer decay, update this comparison to match. Reset the comparison
